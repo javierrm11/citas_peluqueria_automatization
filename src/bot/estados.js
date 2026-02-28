@@ -1,18 +1,9 @@
 const { enviarMensaje } = require('../services/whatsapp')
 const { guardarCita, obtenerCitasCliente, cancelarCita, obtenerHorasDisponibles, SERVICIOS } = require('../services/citas')
 
-// Sesiones en memoria
 const sesiones = {}
 
-// Menu principal
-async function enviarMenu(telefono) {
-  await enviarMensaje(telefono,
-    `¿Qué deseas hacer ahora?\n\n` +
-    `1️⃣ Reservar cita\n` +
-    `2️⃣ Ver mis citas\n` +
-    `3️⃣ Cancelar cita`
-  )
-}
+const MENU = `─────────────────\n¿Qué deseas hacer ahora?\n\n1️⃣ Reservar cita\n2️⃣ Ver mis citas\n3️⃣ Cancelar cita`
 
 async function procesarMensaje(telefono, texto) {
   if (!sesiones[telefono]) {
@@ -49,23 +40,26 @@ async function procesarMensaje(telefono, texto) {
       } else if (texto === '2') {
         const citas = await obtenerCitasCliente(telefono)
         if (citas.length === 0) {
-          await enviarMensaje(telefono, '📅 No tienes citas próximas.')
+          await enviarMensaje(telefono,
+            `📅 No tienes citas próximas.\n\n${MENU}`
+          )
         } else {
           let msg = '📅 *Tus próximas citas:*\n\n'
           citas.forEach((c, i) => {
             msg += `${i + 1}️⃣ ${c.fecha} a las ${c.hora.substring(0, 5)}\n`
             msg += `   💈 ${c.servicios.nombre} - ${c.servicios.precio}€\n\n`
           })
+          msg += MENU
           await enviarMensaje(telefono, msg)
         }
-        await enviarMenu(telefono)
         sesion.estado = 'ESPERANDO_OPCION'
 
       } else if (texto === '3') {
         const citas = await obtenerCitasCliente(telefono)
         if (citas.length === 0) {
-          await enviarMensaje(telefono, '❌ No tienes citas para cancelar.')
-          await enviarMenu(telefono)
+          await enviarMensaje(telefono,
+            `❌ No tienes citas para cancelar.\n\n${MENU}`
+          )
           sesion.estado = 'ESPERANDO_OPCION'
         } else {
           let msg = '❌ ¿Qué cita quieres cancelar?\n\n'
@@ -92,7 +86,6 @@ async function procesarMensaje(telefono, texto) {
         sesion.servicio   = SERVICIOS[texto].nombre
         sesion.servicioId = SERVICIOS[texto].id
 
-        // Fechas próximas disponibles (4 días, sin domingos)
         const hoy    = new Date()
         const fechas = []
         let contador = 0
@@ -156,7 +149,6 @@ async function procesarMensaje(telefono, texto) {
       if (opcionHora >= 1 && opcionHora <= sesion.horasDisponibles.length) {
         sesion.hora = sesion.horasDisponibles[opcionHora - 1]
 
-        // 💾 Guardar en Supabase
         const cita = await guardarCita(
           telefono,
           sesion.servicioId,
@@ -170,15 +162,15 @@ async function procesarMensaje(telefono, texto) {
             `💈 Servicio: ${sesion.servicio}\n` +
             `📅 Fecha: ${sesion.fecha}\n` +
             `🕐 Hora: ${sesion.hora}\n\n` +
-            `Te esperamos 😊`
+            `Te esperamos 😊\n\n` +
+            MENU
           )
         } else {
           await enviarMensaje(telefono,
-            `❌ Hubo un error al guardar la cita.\nInténtalo de nuevo.`
+            `❌ Hubo un error al guardar la cita.\nInténtalo de nuevo.\n\n${MENU}`
           )
         }
 
-        await enviarMenu(telefono)
         sesion.estado = 'ESPERANDO_OPCION'
       } else {
         await enviarMensaje(telefono,
@@ -196,9 +188,8 @@ async function procesarMensaje(telefono, texto) {
           `✅ *Cita cancelada:*\n\n` +
           `📅 ${citaACancelar.fecha} a las ${citaACancelar.hora.substring(0, 5)}\n` +
           `💈 ${citaACancelar.servicios.nombre}\n\n` +
-          `Si necesitas algo más estamos aquí 😊`
+          MENU
         )
-        await enviarMenu(telefono)
         sesion.estado = 'ESPERANDO_OPCION'
       } else {
         await enviarMensaje(telefono,
