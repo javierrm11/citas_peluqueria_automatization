@@ -82,15 +82,6 @@ async function procesarMensaje(telefono, texto) {
             `❌ No tienes citas para cancelar.\n\n${MENU}`,
           );
           sesion.estado = "ESPERANDO_OPCION";
-        } else if (texto === "4") {
-          await enviarMensaje(
-            telefono,
-            `💬 Has solicitado hablar con soporte.\n\n` +
-              `Un responsable te atenderá lo antes posible.\n\n` +
-              `✍️ Escribe tu consulta:`,
-          );
-
-          sesion.estado = "SOPORTE";
         } else {
           let msg = "❌ ¿Qué cita quieres cancelar?\n\n";
           citas.forEach((c, i) => {
@@ -101,6 +92,15 @@ async function procesarMensaje(telefono, texto) {
           await enviarMensaje(telefono, msg);
           sesion.estado = "CANCELANDO_CITA";
         }
+      } else if (texto === "4") {
+        await enviarMensaje(
+          telefono,
+          `💬 Has solicitado hablar con soporte.\n\n` +
+            `Un responsable te atenderá lo antes posible.\n\n` +
+            `✍️ Escribe tu consulta:`,
+        );
+
+        sesion.estado = "SOPORTE";
       } else {
         await enviarMensaje(
           telefono,
