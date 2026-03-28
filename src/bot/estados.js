@@ -3,7 +3,7 @@ const { guardarCita, obtenerCitasCliente, cancelarCita, obtenerHorasDisponibles,
 
 const sesiones = {}
 
-const MENU = `─────────────────\n¿Qué deseas hacer ahora?\n\n1️⃣ Reservar cita\n2️⃣ Ver mis citas\n3️⃣ Cancelar cita\n0️⃣ Salir`
+const MENU = `─────────────────\n¿Qué deseas hacer ahora?\n\n1️⃣ Reservar cita\n2️⃣ Ver mis citas\n3️⃣ Cancelar cita\n4️⃣ Hablar con soporte\n0️⃣ Salir`
 
 async function procesarMensaje(telefono, texto) {
   if (!sesiones[telefono]) {
@@ -32,6 +32,7 @@ async function procesarMensaje(telefono, texto) {
         `1️⃣ Reservar cita\n` +
         `2️⃣ Ver mis citas\n` +
         `3️⃣ Cancelar cita\n` +
+        `4️⃣ Hablar con soporte\n` +
         `0️⃣ Salir`
       )
       sesion.estado = 'ESPERANDO_OPCION'
@@ -90,6 +91,7 @@ async function procesarMensaje(telefono, texto) {
           `1️⃣ Reservar cita\n` +
           `2️⃣ Ver mis citas\n` +
           `3️⃣ Cancelar cita\n` +
+          `4️⃣ Hablar con soporte\n` +
           `0️⃣ Salir`
         )
       }
