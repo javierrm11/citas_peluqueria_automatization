@@ -19,14 +19,18 @@ async function procesarMensaje(telefono, texto) {
   const sesion = sesiones[telefono];
   texto = texto.trim();
 
-  // Opción 0 global: salir desde cualquier estado
+  // Opción 0: salir si está en el menú principal, volver al menú si está en otro estado
   if (texto === "0") {
-    sesion.estado = "INICIO";
-    await enviarMensaje(
-      telefono,
-      `👋 ¡Hasta pronto! Si necesitas algo, escríbenos cuando quieras. 😊`,
-    );
-    delete sesiones[telefono];
+    if (sesion.estado === "ESPERANDO_OPCION" || sesion.estado === "INICIO") {
+      await enviarMensaje(
+        telefono,
+        `👋 ¡Hasta pronto! Si necesitas algo, escríbenos cuando quieras. 😊`,
+      );
+      delete sesiones[telefono];
+    } else {
+      sesion.estado = "ESPERANDO_OPCION";
+      await enviarMensaje(telefono, MENU);
+    }
     return;
   }
 
@@ -97,9 +101,9 @@ async function procesarMensaje(telefono, texto) {
           telefono,
           `💬 Has solicitado hablar con soporte.\n\n` +
             `Un responsable te atenderá lo antes posible.\n\n` +
-            `✍️ Escribe tu consulta:`,
+            `✍️ Escribe tu consulta:\n\n` +
+            `0️⃣ Volver al menú`,
         );
-
         sesion.estado = "SOPORTE";
       } else {
         await enviarMensaje(
@@ -112,6 +116,14 @@ async function procesarMensaje(telefono, texto) {
             `0️⃣ Salir`,
         );
       }
+      break;
+
+    case "SOPORTE":
+      await enviarMensaje(
+        telefono,
+        `✅ Tu mensaje ha sido recibido. En breve nos ponemos en contacto contigo.\n\n${MENU}`,
+      );
+      sesion.estado = "ESPERANDO_OPCION";
       break;
 
     case "ELIGIENDO_SERVICIO":
@@ -245,14 +257,7 @@ async function procesarMensaje(telefono, texto) {
         );
       }
       break;
-    case "SOPORTE":
-      // Aquí puedes reenviar el mensaje a Javier si lo necesitas
-      await enviarMensaje(
-        telefono,
-        `✅ Tu mensaje ha sido recibido. En breve nos ponemos en contacto contigo.\n\n${MENU}`,
-      );
-      sesion.estado = "ESPERANDO_OPCION";
-      break;
+
     default:
       sesion.estado = "INICIO";
       await procesarMensaje(telefono, texto);
