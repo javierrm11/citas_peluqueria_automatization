@@ -9,6 +9,7 @@ El bot permite a los usuarios:
 - 📅 Reservar una cita
 - 👀 Ver sus citas próximas
 - ❌ Cancelar una cita
+- 💬 Hablar con soporte
 
 Todo mediante un flujo conversacional sencillo dentro de WhatsApp.
 
@@ -24,6 +25,7 @@ Cada usuario pasa por distintos estados:
 - `ELIGIENDO_FECHA`
 - `ELIGIENDO_HORA`
 - `CANCELANDO_CITA`
+- `SOPORTE`
 
 Esto permite guiar al usuario paso a paso sin perder contexto.
 
@@ -35,12 +37,15 @@ Esto permite guiar al usuario paso a paso sin perder contexto.
   ├── citas.js           # Lógica de citas (CRUD)
 
 procesarMensaje.js       # Lógica principal del bot
+recordatorios.js         # Recordatorios automáticos (cron)
 ```
 
 ## 📦 Dependencias principales
 
 - Node.js
 - Sistema de envío de WhatsApp (API tipo WhatsApp Cloud / Twilio / Baileys)
+- `@supabase/supabase-js` — base de datos
+- `node-cron` — recordatorios automáticos
 
 ## 🔧 Funciones clave
 
@@ -68,6 +73,21 @@ Desde `services/whatsapp.js`:
 
 - `enviarMensaje(telefono, mensaje)`
 
+### 🔔 Recordatorios automáticos
+
+Desde `recordatorios.js`:
+
+- `iniciarRecordatorios()` — lanza un cron diario a las 15:20 (Europe/Madrid)
+- Consulta en Supabase las citas del día siguiente
+- Envía un mensaje de recordatorio a cada cliente por WhatsApp
+
+Activar en `index.js`:
+
+```js
+const { iniciarRecordatorios } = require('./recordatorios')
+iniciarRecordatorios()
+```
+
 ## ✂️ Servicios disponibles
 
 ```
@@ -86,6 +106,11 @@ Desde `services/whatsapp.js`:
 5. Selecciona fecha disponible
 6. Selecciona hora
 7. Se guarda la cita en el sistema
+
+## 🔄 Navegación
+
+- `0` desde el menú principal → despedida y cierre de sesión
+- `0` desde cualquier otro estado → vuelve al menú principal sin perder sesión
 
 ## 📆 Lógica de fechas
 
@@ -120,23 +145,27 @@ Hola
 1️⃣ Reservar cita
 2️⃣ Ver mis citas
 3️⃣ Cancelar cita
+4️⃣ Hablar con soporte
+0️⃣ Salir
 ```
 
 ## 🧠 Posibles mejoras
 
 - ✅ Recordatorios automáticos (24h antes)
-- ✅ Confirmación por botón (no solo texto)
-- ✅ Integración con Google Calendar
-- ✅ Panel admin (dashboard)
-- ✅ Horarios personalizados por servicio
-- ✅ Multi-empleado (varios barberos)
-- ✅ IA para entender texto libre ("quiero cortarme mañana")
+- ✅ Opción de soporte / contacto directo
+- ⬜ Confirmación por botón (no solo texto)
+- ⬜ Integración con Google Calendar
+- ⬜ Panel admin (dashboard)
+- ⬜ Horarios personalizados por servicio
+- ⬜ Multi-empleado (varios barberos)
+- ⬜ IA para entender texto libre ("quiero cortarme mañana")
 
 ## 📌 Notas
 
 - Las sesiones se guardan en memoria (`objeto sesiones`), por lo que:
   - ❗ Se pierden si reinicias el servidor
   - 👉 Recomendado: usar Redis o base de datos
+- Los recordatorios usan `SUPABASE_SERVICE_ROLE_KEY` para saltarse las RLS policies
 
 ## 🛠️ Instalación
 
