@@ -1,32 +1,150 @@
-## 🛠️ Stack Tecnológico Recomendado
+# 💈 Bot de WhatsApp para Gestión de Citas – Peluquería Javier
 
-| Capa | Tecnología | Por qué |
-|------|-----------|---------|
-| API WhatsApp | Meta Cloud API (gratis) | Oficial y estable |
-| Backend | Node.js + Express | Rápido para I/O |
-| Base de datos | PostgreSQL | Relacional, ideal para citas |
-| Sesiones | Redis | Ultra rápido para estados |
-| Hosting | Railway / Render | Fácil despliegue |
-| Recordatorios | node-cron | Tareas programadas |
+Este proyecto es un bot de WhatsApp desarrollado en Node.js que permite a los clientes gestionar sus citas de forma automática.
 
----
+## 🚀 Funcionalidades
 
-## 📁 Estructura del Proyecto
+El bot permite a los usuarios:
+
+- 📅 Reservar una cita
+- 👀 Ver sus citas próximas
+- ❌ Cancelar una cita
+
+Todo mediante un flujo conversacional sencillo dentro de WhatsApp.
+
+## 🧠 Cómo funciona
+
+El bot utiliza un sistema de sesiones por usuario (teléfono) para mantener el estado de la conversación.
+
+Cada usuario pasa por distintos estados:
+
+- `INICIO`
+- `ESPERANDO_OPCION`
+- `ELIGIENDO_SERVICIO`
+- `ELIGIENDO_FECHA`
+- `ELIGIENDO_HORA`
+- `CANCELANDO_CITA`
+
+Esto permite guiar al usuario paso a paso sin perder contexto.
+
+## 🏗️ Estructura del proyecto
+
 ```
-peluqueria-bot/
-├── src/
-│   ├── webhook.js          # Recibe mensajes de WhatsApp
-│   ├── bot/
-│   │   ├── estados.js      # Máquina de estados
-│   │   ├── mensajes.js     # Templates de respuestas
-│   │   └── validaciones.js
-│   ├── servicios/
-│   │   ├── citas.js        # CRUD de citas
-│   │   ├── whatsapp.js     # Envío de mensajes
-│   │   └── recordatorios.js
-│   └── db/
-│       ├── models/         # Citas, Clientes, Estilistas
-│       └── migrations/
-├── .env
-└── package.json
+/services
+  ├── whatsapp.js        # Envío de mensajes
+  ├── citas.js           # Lógica de citas (CRUD)
 
+procesarMensaje.js       # Lógica principal del bot
+```
+
+## 📦 Dependencias principales
+
+- Node.js
+- Sistema de envío de WhatsApp (API tipo WhatsApp Cloud / Twilio / Baileys)
+
+## 🔧 Funciones clave
+
+### 📩 `procesarMensaje(telefono, texto)`
+
+Función principal que gestiona todo el flujo del bot.
+
+- Detecta el estado del usuario
+- Procesa su respuesta
+- Devuelve el siguiente mensaje
+
+### 📅 Servicios de citas
+
+Importados desde `services/citas.js`:
+
+- `guardarCita()`
+- `obtenerCitasCliente()`
+- `cancelarCita()`
+- `obtenerHorasDisponibles()`
+- `SERVICIOS` (catálogo de servicios)
+
+### 💬 Servicio de WhatsApp
+
+Desde `services/whatsapp.js`:
+
+- `enviarMensaje(telefono, mensaje)`
+
+## ✂️ Servicios disponibles
+
+```
+1️⃣ Corte       - 15€
+2️⃣ Tinte       - 40€
+3️⃣ Barba       - 10€
+4️⃣ Corte+Barba - 22€
+```
+
+## 🔄 Flujo de reserva
+
+1. Usuario escribe cualquier mensaje
+2. Bot muestra menú principal
+3. Usuario elige "Reservar cita"
+4. Selecciona servicio
+5. Selecciona fecha disponible
+6. Selecciona hora
+7. Se guarda la cita en el sistema
+
+## 📆 Lógica de fechas
+
+- Se generan automáticamente los próximos 4 días disponibles
+- Se excluyen los domingos
+- Se muestran en formato simple para el usuario
+
+## ⚠️ Manejo de errores
+
+El bot controla:
+
+- Opciones inválidas
+- Días sin disponibilidad
+- Errores al guardar citas
+- Cancelaciones incorrectas
+
+## 🧪 Ejemplo de uso
+
+**Usuario:**
+
+```
+Hola
+```
+
+**Bot:**
+
+```
+👋 ¡Hola! Bienvenido a Peluquería Javier
+
+¿Qué deseas hacer?
+
+1️⃣ Reservar cita
+2️⃣ Ver mis citas
+3️⃣ Cancelar cita
+```
+
+## 🧠 Posibles mejoras
+
+- ✅ Recordatorios automáticos (24h antes)
+- ✅ Confirmación por botón (no solo texto)
+- ✅ Integración con Google Calendar
+- ✅ Panel admin (dashboard)
+- ✅ Horarios personalizados por servicio
+- ✅ Multi-empleado (varios barberos)
+- ✅ IA para entender texto libre ("quiero cortarme mañana")
+
+## 📌 Notas
+
+- Las sesiones se guardan en memoria (`objeto sesiones`), por lo que:
+  - ❗ Se pierden si reinicias el servidor
+  - 👉 Recomendado: usar Redis o base de datos
+
+## 🛠️ Instalación
+
+```bash
+npm install
+node index.js
+```
+
+## 👨‍💻 Autor
+
+Desarrollado para automatizar la gestión de citas de peluquería y mejorar la experiencia del cliente.

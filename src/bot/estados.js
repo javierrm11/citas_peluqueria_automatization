@@ -3,7 +3,7 @@ const { guardarCita, obtenerCitasCliente, cancelarCita, obtenerHorasDisponibles,
 
 const sesiones = {}
 
-const MENU = `─────────────────\n¿Qué deseas hacer ahora?\n\n1️⃣ Reservar cita\n2️⃣ Ver mis citas\n3️⃣ Cancelar cita`
+const MENU = `─────────────────\n¿Qué deseas hacer ahora?\n\n1️⃣ Reservar cita\n2️⃣ Ver mis citas\n3️⃣ Cancelar cita\n0️⃣ Salir`
 
 async function procesarMensaje(telefono, texto) {
   if (!sesiones[telefono]) {
@@ -13,6 +13,16 @@ async function procesarMensaje(telefono, texto) {
   const sesion = sesiones[telefono]
   texto = texto.trim()
 
+  // Opción 0 global: salir desde cualquier estado
+  if (texto === '0') {
+    sesion.estado = 'INICIO'
+    await enviarMensaje(telefono,
+      `👋 ¡Hasta pronto! Si necesitas algo, escríbenos cuando quieras. 😊`
+    )
+    delete sesiones[telefono]
+    return
+  }
+
   switch (sesion.estado) {
 
     case 'INICIO':
@@ -21,7 +31,8 @@ async function procesarMensaje(telefono, texto) {
         `¿Qué deseas hacer?\n\n` +
         `1️⃣ Reservar cita\n` +
         `2️⃣ Ver mis citas\n` +
-        `3️⃣ Cancelar cita`
+        `3️⃣ Cancelar cita\n` +
+        `0️⃣ Salir`
       )
       sesion.estado = 'ESPERANDO_OPCION'
       break
@@ -33,7 +44,8 @@ async function procesarMensaje(telefono, texto) {
           `1️⃣ Corte - 15€\n` +
           `2️⃣ Tinte - 40€\n` +
           `3️⃣ Barba - 10€\n` +
-          `4️⃣ Corte + Barba - 22€`
+          `4️⃣ Corte + Barba - 22€\n` +
+          `0️⃣ Volver al menú`
         )
         sesion.estado = 'ELIGIENDO_SERVICIO'
 
@@ -66,6 +78,7 @@ async function procesarMensaje(telefono, texto) {
           citas.forEach((c, i) => {
             msg += `${i + 1}️⃣ ${c.fecha} a las ${c.hora.substring(0, 5)} - ${c.servicios.nombre}\n`
           })
+          msg += `\n0️⃣ Volver al menú`
           sesion.citasPendientes = citas
           await enviarMensaje(telefono, msg)
           sesion.estado = 'CANCELANDO_CITA'
@@ -76,7 +89,8 @@ async function procesarMensaje(telefono, texto) {
           `⚠️ Opción no válida. Por favor elige:\n\n` +
           `1️⃣ Reservar cita\n` +
           `2️⃣ Ver mis citas\n` +
-          `3️⃣ Cancelar cita`
+          `3️⃣ Cancelar cita\n` +
+          `0️⃣ Salir`
         )
       }
       break
@@ -109,11 +123,14 @@ async function procesarMensaje(telefono, texto) {
           const d = new Date(f + 'T12:00:00')
           msg += `${idx + 1}️⃣ ${dias[d.getDay()]} ${f}\n`
         })
+        msg += `\n0️⃣ Volver al menú`
 
         await enviarMensaje(telefono, msg)
         sesion.estado = 'ELIGIENDO_FECHA'
       } else {
-        await enviarMensaje(telefono, '⚠️ Elige una opción del 1 al 4')
+        await enviarMensaje(telefono,
+          `⚠️ Elige una opción del 1 al 4\n\n0️⃣ Volver al menú`
+        )
       }
       break
 
@@ -126,7 +143,7 @@ async function procesarMensaje(telefono, texto) {
 
         if (horasLibres.length === 0) {
           await enviarMensaje(telefono,
-            `😔 No hay horas disponibles el ${sesion.fecha}.\n\nElige otro día:`
+            `😔 No hay horas disponibles el ${sesion.fecha}.\n\nElige otro día:\n\n0️⃣ Volver al menú`
           )
         } else {
           sesion.horasDisponibles = horasLibres
@@ -134,12 +151,13 @@ async function procesarMensaje(telefono, texto) {
           horasLibres.forEach((h, idx) => {
             msg += `${idx + 1}️⃣ ${h}\n`
           })
+          msg += `\n0️⃣ Volver al menú`
           await enviarMensaje(telefono, msg)
           sesion.estado = 'ELIGIENDO_HORA'
         }
       } else {
         await enviarMensaje(telefono,
-          `⚠️ Elige una opción del 1 al ${sesion.fechasDisponibles.length}`
+          `⚠️ Elige una opción del 1 al ${sesion.fechasDisponibles.length}\n\n0️⃣ Volver al menú`
         )
       }
       break
@@ -174,7 +192,7 @@ async function procesarMensaje(telefono, texto) {
         sesion.estado = 'ESPERANDO_OPCION'
       } else {
         await enviarMensaje(telefono,
-          `⚠️ Elige una opción del 1 al ${sesion.horasDisponibles.length}`
+          `⚠️ Elige una opción del 1 al ${sesion.horasDisponibles.length}\n\n0️⃣ Volver al menú`
         )
       }
       break
@@ -193,7 +211,7 @@ async function procesarMensaje(telefono, texto) {
         sesion.estado = 'ESPERANDO_OPCION'
       } else {
         await enviarMensaje(telefono,
-          `⚠️ Elige una opción válida del 1 al ${sesion.citasPendientes.length}`
+          `⚠️ Elige una opción válida del 1 al ${sesion.citasPendientes.length}\n\n0️⃣ Volver al menú`
         )
       }
       break
