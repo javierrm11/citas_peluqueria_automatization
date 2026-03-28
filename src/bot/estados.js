@@ -245,7 +245,14 @@ async function procesarMensaje(telefono, texto) {
         );
       }
       break;
-
+    case "SOPORTE":
+      // Aquí puedes reenviar el mensaje a Javier si lo necesitas
+      await enviarMensaje(
+        telefono,
+        `✅ Tu mensaje ha sido recibido. En breve nos ponemos en contacto contigo.\n\n${MENU}`,
+      );
+      sesion.estado = "ESPERANDO_OPCION";
+      break;
     default:
       sesion.estado = "INICIO";
       await procesarMensaje(telefono, texto);
