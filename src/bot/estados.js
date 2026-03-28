@@ -1,4 +1,4 @@
-const { enviarMensaje } = require('../services/whatsapp')
+const { enviarMensaje } = require('../services/whatsapp.js')
 const { guardarCita, obtenerCitasCliente, cancelarCita, obtenerHorasDisponibles, SERVICIOS } = require('../services/citas')
 
 const sesiones = {}

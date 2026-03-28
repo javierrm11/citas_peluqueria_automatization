@@ -1,4 +1,6 @@
 require('dotenv').config()
+const { iniciarRecordatorios } = require('./src/bot/recordatorios')
+iniciarRecordatorios()
 const express = require('express')
 const app = express()
 app.use(express.json())
