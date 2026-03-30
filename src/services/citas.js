@@ -50,24 +50,21 @@ async function guardarCita(telefono, servicioId, fecha, hora) {
 
 // Obtener citas del cliente
 async function obtenerCitasCliente(telefono) {
-  const { data: cliente } = await supabase
-    .from('clientes')
-    .select('id')
-    .eq('telefono', telefono)
-    .single()
+  const hoy = new Date().toISOString().split("T")[0] // "YYYY-MM-DD"
 
-  if (!cliente) return []
+  const { data, error } = await supabase
+    .from("citas")
+    .select("id, fecha, hora, servicios(nombre, precio)")
+    .eq("clientes.telefono", telefono) // ajusta según tu join
+    .gte("fecha", hoy)                 // solo desde hoy
+    .neq("estado", "cancelada")        // excluir canceladas
+    .order("fecha", { ascending: true })
+    .order("hora",  { ascending: true })
 
-  const { data } = await supabase
-    .from('citas')
-    .select(`
-      *,
-      servicios (nombre, precio)
-    `)
-    .eq('cliente_id', cliente.id)
-    .eq('estado', 'confirmada')
-    .gte('fecha', new Date().toISOString().split('T')[0])
-    .order('fecha', { ascending: true })
+  if (error) {
+    console.error("[Citas] Error al obtener citas:", error.message)
+    return []
+  }
 
   return data || []
 }
