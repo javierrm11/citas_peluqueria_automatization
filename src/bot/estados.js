@@ -1,5 +1,5 @@
 const { createClient } = require("@supabase/supabase-js");
-const { enviarMensaje } = require("../services/whatsapp.js");
+const { enviarMensaje, enviarBotones } = require("../services/whatsapp.js");
 const {
   guardarCita,
   obtenerCitasCliente,
@@ -24,10 +24,7 @@ async function obtenerSesion(telefono) {
     .eq("telefono", telefono)
     .single();
 
-  if (error || !data) {
-    return { estado: "INICIO", datos: {} };
-  }
-
+  if (error || !data) return { estado: "INICIO", datos: {} };
   return { estado: data.estado, datos: data.datos || {} };
 }
 
@@ -53,10 +50,7 @@ async function procesarMensaje(telefono, texto) {
   // Opción 0: salir si está en el menú principal, volver al menú si está en otro estado
   if (texto === "0") {
     if (estado === "ESPERANDO_OPCION" || estado === "INICIO") {
-      await enviarMensaje(
-        telefono,
-        `👋 ¡Hasta pronto! Si necesitas algo, escríbenos cuando quieras. 😊`
-      );
+      await enviarMensaje(telefono, `👋 ¡Hasta pronto! Si necesitas algo, escríbenos cuando quieras. 😊`);
       await eliminarSesion(telefono);
     } else {
       await guardarSesion(telefono, "ESPERANDO_OPCION", {});
@@ -198,7 +192,7 @@ async function procesarMensaje(telefono, texto) {
       const { fechasDisponibles, servicio, servicioId } = datos;
 
       if (opcionFecha >= 1 && opcionFecha <= fechasDisponibles.length) {
-        const fecha      = fechasDisponibles[opcionFecha - 1];
+        const fecha       = fechasDisponibles[opcionFecha - 1];
         const horasLibres = await obtenerHorasDisponibles(fecha);
 
         if (horasLibres.length === 0) {
@@ -230,6 +224,38 @@ async function procesarMensaje(telefono, texto) {
 
       if (opcionHora >= 1 && opcionHora <= horasDisponibles.length) {
         const hora = horasDisponibles[opcionHora - 1];
+
+        // Mostrar resumen y pedir confirmación con botones
+        await enviarBotones(
+          telefono,
+          `🔍 *Resumen de tu cita:*\n\n` +
+            `💈 Servicio: ${servicio}\n` +
+            `📅 Fecha: ${fecha}\n` +
+            `🕐 Hora: ${hora}\n\n` +
+            `¿Confirmamos la cita?`,
+          [
+            { id: "confirmar_cita", title: "✅ Confirmar" },
+            { id: "cancelar_cita",  title: "❌ Cancelar"  }
+          ],
+          "Peluquería Javier"
+        );
+
+        await guardarSesion(telefono, "CONFIRMANDO_CITA", { servicio, servicioId, fecha, hora });
+      } else {
+        await enviarMensaje(
+          telefono,
+          `⚠️ Elige una opción del 1 al ${horasDisponibles.length}\n\n0️⃣ Volver al menú`
+        );
+      }
+      break;
+    }
+
+    // Nuevo estado: espera la respuesta del botón de confirmación
+    case "CONFIRMANDO_CITA": {
+      const { servicio, servicioId, fecha, hora } = datos;
+
+      // La Cloud API devuelve el id del botón pulsado en el campo texto
+      if (texto === "confirmar_cita") {
         const cita = await guardarCita(telefono, servicioId, fecha, hora);
 
         if (cita) {
@@ -249,10 +275,25 @@ async function procesarMensaje(telefono, texto) {
           );
         }
         await guardarSesion(telefono, "ESPERANDO_OPCION", {});
-      } else {
+
+      } else if (texto === "cancelar_cita") {
         await enviarMensaje(
           telefono,
-          `⚠️ Elige una opción del 1 al ${horasDisponibles.length}\n\n0️⃣ Volver al menú`
+          `↩️ Cita no guardada. Puedes volver a elegir cuando quieras.\n\n${MENU}`
+        );
+        await guardarSesion(telefono, "ESPERANDO_OPCION", {});
+
+      } else {
+        // Por si el usuario escribe texto en lugar de pulsar el botón
+        await enviarBotones(
+          telefono,
+          `Por favor pulsa uno de los botones para confirmar o cancelar la cita:\n\n` +
+            `💈 ${servicio} — ${fecha} a las ${hora}`,
+          [
+            { id: "confirmar_cita", title: "✅ Confirmar" },
+            { id: "cancelar_cita",  title: "❌ Cancelar"  }
+          ],
+          "Peluquería Javier"
         );
       }
       break;
