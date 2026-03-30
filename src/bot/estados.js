@@ -1,3 +1,4 @@
+const { createClient } = require("@supabase/supabase-js");
 const { enviarMensaje } = require("../services/whatsapp.js");
 const {
   guardarCita,
@@ -7,35 +8,65 @@ const {
   SERVICIOS,
 } = require("../services/citas");
 
-const sesiones = {};
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+);
 
 const MENU = `─────────────────\n¿Qué deseas hacer ahora?\n\n1️⃣ Reservar cita\n2️⃣ Ver mis citas\n3️⃣ Cancelar cita\n4️⃣ Hablar con soporte\n0️⃣ Salir`;
 
-async function procesarMensaje(telefono, texto) {
-  if (!sesiones[telefono]) {
-    sesiones[telefono] = { estado: "INICIO" };
+// ─── Helpers de sesión ────────────────────────────────────────────────────────
+
+async function obtenerSesion(telefono) {
+  const { data, error } = await supabase
+    .from("sesiones")
+    .select("estado, datos")
+    .eq("telefono", telefono)
+    .single();
+
+  if (error || !data) {
+    return { estado: "INICIO", datos: {} };
   }
 
-  const sesion = sesiones[telefono];
+  return { estado: data.estado, datos: data.datos || {} };
+}
+
+async function guardarSesion(telefono, estado, datos = {}) {
+  await supabase
+    .from("sesiones")
+    .upsert(
+      { telefono, estado, datos, updated_at: new Date().toISOString() },
+      { onConflict: "telefono" }
+    );
+}
+
+async function eliminarSesion(telefono) {
+  await supabase.from("sesiones").delete().eq("telefono", telefono);
+}
+
+// ─── Procesador principal ─────────────────────────────────────────────────────
+
+async function procesarMensaje(telefono, texto) {
+  let { estado, datos } = await obtenerSesion(telefono);
   texto = texto.trim();
 
   // Opción 0: salir si está en el menú principal, volver al menú si está en otro estado
   if (texto === "0") {
-    if (sesion.estado === "ESPERANDO_OPCION" || sesion.estado === "INICIO") {
+    if (estado === "ESPERANDO_OPCION" || estado === "INICIO") {
       await enviarMensaje(
         telefono,
-        `👋 ¡Hasta pronto! Si necesitas algo, escríbenos cuando quieras. 😊`,
+        `👋 ¡Hasta pronto! Si necesitas algo, escríbenos cuando quieras. 😊`
       );
-      delete sesiones[telefono];
+      await eliminarSesion(telefono);
     } else {
-      sesion.estado = "ESPERANDO_OPCION";
+      await guardarSesion(telefono, "ESPERANDO_OPCION", {});
       await enviarMensaje(telefono, MENU);
     }
     return;
   }
 
-  switch (sesion.estado) {
-    case "INICIO":
+  switch (estado) {
+    case "INICIO": {
       await enviarMensaje(
         telefono,
         `👋 ¡Hola! Bienvenido a *Peluquería Javier*\n\n` +
@@ -44,12 +75,13 @@ async function procesarMensaje(telefono, texto) {
           `2️⃣ Ver mis citas\n` +
           `3️⃣ Cancelar cita\n` +
           `4️⃣ Hablar con soporte\n` +
-          `0️⃣ Salir`,
+          `0️⃣ Salir`
       );
-      sesion.estado = "ESPERANDO_OPCION";
+      await guardarSesion(telefono, "ESPERANDO_OPCION", {});
       break;
+    }
 
-    case "ESPERANDO_OPCION":
+    case "ESPERANDO_OPCION": {
       if (texto === "1") {
         await enviarMensaje(
           telefono,
@@ -58,16 +90,14 @@ async function procesarMensaje(telefono, texto) {
             `2️⃣ Tinte - 40€\n` +
             `3️⃣ Barba - 10€\n` +
             `4️⃣ Corte + Barba - 22€\n` +
-            `0️⃣ Volver al menú`,
+            `0️⃣ Volver al menú`
         );
-        sesion.estado = "ELIGIENDO_SERVICIO";
+        await guardarSesion(telefono, "ELIGIENDO_SERVICIO", {});
+
       } else if (texto === "2") {
         const citas = await obtenerCitasCliente(telefono);
         if (citas.length === 0) {
-          await enviarMensaje(
-            telefono,
-            `📅 No tienes citas próximas.\n\n${MENU}`,
-          );
+          await enviarMensaje(telefono, `📅 No tienes citas próximas.\n\n${MENU}`);
         } else {
           let msg = "📅 *Tus próximas citas:*\n\n";
           citas.forEach((c, i) => {
@@ -77,34 +107,33 @@ async function procesarMensaje(telefono, texto) {
           msg += MENU;
           await enviarMensaje(telefono, msg);
         }
-        sesion.estado = "ESPERANDO_OPCION";
+        await guardarSesion(telefono, "ESPERANDO_OPCION", {});
+
       } else if (texto === "3") {
         const citas = await obtenerCitasCliente(telefono);
         if (citas.length === 0) {
-          await enviarMensaje(
-            telefono,
-            `❌ No tienes citas para cancelar.\n\n${MENU}`,
-          );
-          sesion.estado = "ESPERANDO_OPCION";
+          await enviarMensaje(telefono, `❌ No tienes citas para cancelar.\n\n${MENU}`);
+          await guardarSesion(telefono, "ESPERANDO_OPCION", {});
         } else {
           let msg = "❌ ¿Qué cita quieres cancelar?\n\n";
           citas.forEach((c, i) => {
             msg += `${i + 1}️⃣ ${c.fecha} a las ${c.hora.substring(0, 5)} - ${c.servicios.nombre}\n`;
           });
           msg += `\n0️⃣ Volver al menú`;
-          sesion.citasPendientes = citas;
           await enviarMensaje(telefono, msg);
-          sesion.estado = "CANCELANDO_CITA";
+          await guardarSesion(telefono, "CANCELANDO_CITA", { citasPendientes: citas });
         }
+
       } else if (texto === "4") {
         await enviarMensaje(
           telefono,
           `💬 Has solicitado hablar con soporte.\n\n` +
             `Un responsable te atenderá lo antes posible.\n\n` +
             `✍️ Escribe tu consulta:\n\n` +
-            `0️⃣ Volver al menú`,
+            `0️⃣ Volver al menú`
         );
-        sesion.estado = "SOPORTE";
+        await guardarSesion(telefono, "SOPORTE", {});
+
       } else {
         await enviarMensaje(
           telefono,
@@ -113,28 +142,30 @@ async function procesarMensaje(telefono, texto) {
             `2️⃣ Ver mis citas\n` +
             `3️⃣ Cancelar cita\n` +
             `4️⃣ Hablar con soporte\n` +
-            `0️⃣ Salir`,
+            `0️⃣ Salir`
         );
       }
       break;
+    }
 
-    case "SOPORTE":
+    case "SOPORTE": {
       await enviarMensaje(
         telefono,
-        `✅ Tu mensaje ha sido recibido. En breve nos ponemos en contacto contigo.\n\n${MENU}`,
+        `✅ Tu mensaje ha sido recibido. En breve nos ponemos en contacto contigo.\n\n${MENU}`
       );
-      sesion.estado = "ESPERANDO_OPCION";
+      await guardarSesion(telefono, "ESPERANDO_OPCION", {});
       break;
+    }
 
-    case "ELIGIENDO_SERVICIO":
+    case "ELIGIENDO_SERVICIO": {
       if (SERVICIOS[texto]) {
-        sesion.servicio = SERVICIOS[texto].nombre;
-        sesion.servicioId = SERVICIOS[texto].id;
+        const servicio   = SERVICIOS[texto].nombre;
+        const servicioId = SERVICIOS[texto].id;
 
-        const hoy = new Date();
+        const hoy    = new Date();
         const fechas = [];
         let contador = 0;
-        let i = 1;
+        let i        = 1;
 
         while (contador < 4) {
           const fecha = new Date(hoy);
@@ -146,10 +177,8 @@ async function procesarMensaje(telefono, texto) {
           i++;
         }
 
-        sesion.fechasDisponibles = fechas;
-
         const dias = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
-        let msg = `📅 Elige un día para tu *${sesion.servicio}*:\n\n`;
+        let msg = `📅 Elige un día para tu *${servicio}*:\n\n`;
         fechas.forEach((f, idx) => {
           const d = new Date(f + "T12:00:00");
           msg += `${idx + 1}️⃣ ${dias[d.getDay()]} ${f}\n`;
@@ -157,110 +186,106 @@ async function procesarMensaje(telefono, texto) {
         msg += `\n0️⃣ Volver al menú`;
 
         await enviarMensaje(telefono, msg);
-        sesion.estado = "ELIGIENDO_FECHA";
+        await guardarSesion(telefono, "ELIGIENDO_FECHA", { servicio, servicioId, fechasDisponibles: fechas });
       } else {
-        await enviarMensaje(
-          telefono,
-          `⚠️ Elige una opción del 1 al 4\n\n0️⃣ Volver al menú`,
-        );
+        await enviarMensaje(telefono, `⚠️ Elige una opción del 1 al 4\n\n0️⃣ Volver al menú`);
       }
       break;
+    }
 
-    case "ELIGIENDO_FECHA":
+    case "ELIGIENDO_FECHA": {
       const opcionFecha = parseInt(texto);
-      if (opcionFecha >= 1 && opcionFecha <= sesion.fechasDisponibles.length) {
-        sesion.fecha = sesion.fechasDisponibles[opcionFecha - 1];
+      const { fechasDisponibles, servicio, servicioId } = datos;
 
-        const horasLibres = await obtenerHorasDisponibles(sesion.fecha);
+      if (opcionFecha >= 1 && opcionFecha <= fechasDisponibles.length) {
+        const fecha      = fechasDisponibles[opcionFecha - 1];
+        const horasLibres = await obtenerHorasDisponibles(fecha);
 
         if (horasLibres.length === 0) {
           await enviarMensaje(
             telefono,
-            `😔 No hay horas disponibles el ${sesion.fecha}.\n\nElige otro día:\n\n0️⃣ Volver al menú`,
+            `😔 No hay horas disponibles el ${fecha}.\n\nElige otro día:\n\n0️⃣ Volver al menú`
           );
         } else {
-          sesion.horasDisponibles = horasLibres;
-          let msg = `🕐 Horas disponibles para el *${sesion.fecha}*:\n\n`;
+          let msg = `🕐 Horas disponibles para el *${fecha}*:\n\n`;
           horasLibres.forEach((h, idx) => {
             msg += `${idx + 1}️⃣ ${h}\n`;
           });
           msg += `\n0️⃣ Volver al menú`;
           await enviarMensaje(telefono, msg);
-          sesion.estado = "ELIGIENDO_HORA";
+          await guardarSesion(telefono, "ELIGIENDO_HORA", { servicio, servicioId, fecha, horasDisponibles: horasLibres });
         }
       } else {
         await enviarMensaje(
           telefono,
-          `⚠️ Elige una opción del 1 al ${sesion.fechasDisponibles.length}\n\n0️⃣ Volver al menú`,
+          `⚠️ Elige una opción del 1 al ${fechasDisponibles.length}\n\n0️⃣ Volver al menú`
         );
       }
       break;
+    }
 
-    case "ELIGIENDO_HORA":
+    case "ELIGIENDO_HORA": {
       const opcionHora = parseInt(texto);
-      if (opcionHora >= 1 && opcionHora <= sesion.horasDisponibles.length) {
-        sesion.hora = sesion.horasDisponibles[opcionHora - 1];
+      const { servicio, servicioId, fecha, horasDisponibles } = datos;
 
-        const cita = await guardarCita(
-          telefono,
-          sesion.servicioId,
-          sesion.fecha,
-          sesion.hora,
-        );
+      if (opcionHora >= 1 && opcionHora <= horasDisponibles.length) {
+        const hora = horasDisponibles[opcionHora - 1];
+        const cita = await guardarCita(telefono, servicioId, fecha, hora);
 
         if (cita) {
           await enviarMensaje(
             telefono,
             `✅ *¡Cita confirmada!*\n\n` +
-              `💈 Servicio: ${sesion.servicio}\n` +
-              `📅 Fecha: ${sesion.fecha}\n` +
-              `🕐 Hora: ${sesion.hora}\n\n` +
+              `💈 Servicio: ${servicio}\n` +
+              `📅 Fecha: ${fecha}\n` +
+              `🕐 Hora: ${hora}\n\n` +
               `Te esperamos 😊\n\n` +
-              MENU,
+              MENU
           );
         } else {
           await enviarMensaje(
             telefono,
-            `❌ Hubo un error al guardar la cita.\nInténtalo de nuevo.\n\n${MENU}`,
+            `❌ Hubo un error al guardar la cita.\nInténtalo de nuevo.\n\n${MENU}`
           );
         }
-
-        sesion.estado = "ESPERANDO_OPCION";
+        await guardarSesion(telefono, "ESPERANDO_OPCION", {});
       } else {
         await enviarMensaje(
           telefono,
-          `⚠️ Elige una opción del 1 al ${sesion.horasDisponibles.length}\n\n0️⃣ Volver al menú`,
+          `⚠️ Elige una opción del 1 al ${horasDisponibles.length}\n\n0️⃣ Volver al menú`
         );
       }
       break;
+    }
 
-    case "CANCELANDO_CITA":
+    case "CANCELANDO_CITA": {
       const opcionCancelar = parseInt(texto);
-      if (
-        opcionCancelar >= 1 &&
-        opcionCancelar <= sesion.citasPendientes.length
-      ) {
-        const citaACancelar = sesion.citasPendientes[opcionCancelar - 1];
+      const { citasPendientes } = datos;
+
+      if (opcionCancelar >= 1 && opcionCancelar <= citasPendientes.length) {
+        const citaACancelar = citasPendientes[opcionCancelar - 1];
         await cancelarCita(citaACancelar.id);
         await enviarMensaje(
           telefono,
           `✅ *Cita cancelada:*\n\n` +
             `📅 ${citaACancelar.fecha} a las ${citaACancelar.hora.substring(0, 5)}\n` +
             `💈 ${citaACancelar.servicios.nombre}\n\n` +
-            MENU,
+            MENU
         );
-        sesion.estado = "ESPERANDO_OPCION";
+        await guardarSesion(telefono, "ESPERANDO_OPCION", {});
       } else {
         await enviarMensaje(
           telefono,
-          `⚠️ Elige una opción válida del 1 al ${sesion.citasPendientes.length}\n\n0️⃣ Volver al menú`,
+          `⚠️ Elige una opción válida del 1 al ${citasPendientes.length}\n\n0️⃣ Volver al menú`
         );
       }
       break;
+    }
 
-    default:
-      sesion.estado = "INICIO";
+    default: {
+      await guardarSesion(telefono, "INICIO", {});
       await procesarMensaje(telefono, texto);
+    }
   }
 }
 
