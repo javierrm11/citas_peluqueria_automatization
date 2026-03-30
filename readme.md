@@ -153,7 +153,7 @@ Hola
 
 - ✅ Recordatorios automáticos (24h antes)
 - ✅ Opción de soporte / contacto directo
-- ⬜ Confirmación por botón (no solo texto)
+- ✅ Confirmación por botón (no solo texto)
 - ⬜ Integración con Google Calendar
 - ⬜ Panel admin (dashboard)
 - ⬜ Horarios personalizados por servicio
