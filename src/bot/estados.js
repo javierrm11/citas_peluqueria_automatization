@@ -189,7 +189,8 @@ async function procesarMensaje(telefono, texto) {
 
       if (opcionFecha >= 1 && opcionFecha <= fechasDisponibles.length) {
         const fecha       = fechasDisponibles[opcionFecha - 1]
-        const horasLibres = await obtenerHorasDisponibles(fecha)
+        // ← ahora pasamos servicioId para calcular slots según duración del servicio
+        const horasLibres = await obtenerHorasDisponibles(fecha, servicioId)
 
         if (horasLibres.length === 0) {
           await enviarMensaje(
@@ -221,7 +222,6 @@ async function procesarMensaje(telefono, texto) {
       if (opcionHora >= 1 && opcionHora <= horasDisponibles.length) {
         const hora = horasDisponibles[opcionHora - 1]
 
-        // Mostrar resumen y pedir confirmación con botones
         await enviarBotones(
           telefono,
           `🔍 *Resumen de tu cita:*\n\n` +
@@ -276,7 +276,6 @@ async function procesarMensaje(telefono, texto) {
         await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
 
       } else {
-        // El usuario escribió texto en lugar de pulsar el botón
         await enviarBotones(
           telefono,
           `Por favor pulsa uno de los botones:\n\n` +
