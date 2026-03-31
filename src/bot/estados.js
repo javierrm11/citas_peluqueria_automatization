@@ -1,10 +1,10 @@
 const { enviarMensaje, enviarBotones } = require('../services/whatsapp.js')
 const {
+  obtenerServicios,
   guardarCita,
   obtenerCitasCliente,
   cancelarCita,
   obtenerHorasDisponibles,
-  SERVICIOS
 } = require('../services/citas')
 const supabase = require('../database/db')
 
@@ -73,16 +73,18 @@ async function procesarMensaje(telefono, texto) {
 
     case 'ESPERANDO_OPCION': {
       if (texto === '1') {
-        await enviarMensaje(
-          telefono,
-          `✂️ ¿Qué servicio necesitas?\n\n` +
-          `1️⃣ Corte - 15€\n` +
-          `2️⃣ Tinte - 40€\n` +
-          `3️⃣ Barba - 10€\n` +
-          `4️⃣ Corte + Barba - 22€\n` +
-          `0️⃣ Volver al menú`
-        )
-        await guardarSesion(telefono, 'ELIGIENDO_SERVICIO', {})
+        // Carga servicios desde BD y construye el mensaje dinámicamente
+        const SERVICIOS = await obtenerServicios()
+        const total     = Object.keys(SERVICIOS).length
+
+        let msg = `✂️ ¿Qué servicio necesitas?\n\n`
+        for (const [key, s] of Object.entries(SERVICIOS)) {
+          msg += `${key}️⃣ ${s.nombre} - ${s.precio}\n`
+        }
+        msg += `0️⃣ Volver al menú`
+
+        await enviarMensaje(telefono, msg)
+        await guardarSesion(telefono, 'ELIGIENDO_SERVICIO', { totalServicios: total })
 
       } else if (texto === '2') {
         const citas = await obtenerCitasCliente(telefono)
@@ -148,6 +150,9 @@ async function procesarMensaje(telefono, texto) {
     }
 
     case 'ELIGIENDO_SERVICIO': {
+      const SERVICIOS      = await obtenerServicios()
+      const { totalServicios } = datos
+
       if (SERVICIOS[texto]) {
         const servicio   = SERVICIOS[texto].nombre
         const servicioId = SERVICIOS[texto].id
@@ -178,7 +183,10 @@ async function procesarMensaje(telefono, texto) {
         await enviarMensaje(telefono, msg)
         await guardarSesion(telefono, 'ELIGIENDO_FECHA', { servicio, servicioId, fechasDisponibles: fechas })
       } else {
-        await enviarMensaje(telefono, `⚠️ Elige una opción del 1 al 4\n\n0️⃣ Volver al menú`)
+        await enviarMensaje(
+          telefono,
+          `⚠️ Elige una opción del 1 al ${totalServicios}\n\n0️⃣ Volver al menú`
+        )
       }
       break
     }
@@ -189,7 +197,6 @@ async function procesarMensaje(telefono, texto) {
 
       if (opcionFecha >= 1 && opcionFecha <= fechasDisponibles.length) {
         const fecha       = fechasDisponibles[opcionFecha - 1]
-        // ← ahora pasamos servicioId para calcular slots según duración del servicio
         const horasLibres = await obtenerHorasDisponibles(fecha, servicioId)
 
         if (horasLibres.length === 0) {

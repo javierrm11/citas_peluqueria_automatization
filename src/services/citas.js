@@ -1,10 +1,40 @@
 const supabase = require('../database/db')
 
-const SERVICIOS = {
-  '1': { id: 1, nombre: 'Corte',         precio: '15€' },
-  '2': { id: 2, nombre: 'Tinte',         precio: '40€' },
-  '3': { id: 3, nombre: 'Barba',         precio: '10€' },
-  '4': { id: 4, nombre: 'Corte + Barba', precio: '22€' }
+// ─── Servicios desde BD ───────────────────────────────────────────────────────
+
+// Cache en memoria para no consultar en cada mensaje
+let _serviciosCache = null
+
+async function obtenerServicios() {
+  if (_serviciosCache) return _serviciosCache
+
+  const { data, error } = await supabase
+    .from('servicios')
+    .select('id, nombre, precio, duracion_minutos')
+    .order('id', { ascending: true })
+
+  if (error || !data) {
+    console.error('❌ Error obteniendo servicios:', error)
+    return {}
+  }
+
+  // Construye el mismo formato que antes: { '1': { id, nombre, precio }, ... }
+  _serviciosCache = {}
+  data.forEach((s, idx) => {
+    _serviciosCache[String(idx + 1)] = {
+      id:                s.id,
+      nombre:            s.nombre,
+      precio:            `${s.precio}€`,
+      duracion_minutos:  s.duracion_minutos
+    }
+  })
+
+  return _serviciosCache
+}
+
+// Invalida el cache (útil si cambias servicios en BD sin reiniciar)
+function invalidarCacheServicios() {
+  _serviciosCache = null
 }
 
 // ─── Cliente ──────────────────────────────────────────────────────────────────
@@ -87,21 +117,17 @@ async function cancelarCita(citaId) {
 
 // ─── Helpers de tiempo ────────────────────────────────────────────────────────
 
-// Convierte "HH:MM" a minutos desde medianoche
 function horaAMinutos(hora) {
   const [h, m] = hora.substring(0, 5).split(':').map(Number)
   return h * 60 + m
 }
 
-// Convierte minutos desde medianoche a "HH:MM"
 function minutosAHora(minutos) {
   const h = Math.floor(minutos / 60).toString().padStart(2, '0')
   const m = (minutos % 60).toString().padStart(2, '0')
   return `${h}:${m}`
 }
 
-// Genera slots de `duracion` minutos dentro de una franja [inicio, fin)
-// El último slot debe terminar antes o en hora_fin
 function generarSlots(horaInicio, horaFin, duracion) {
   const slots  = []
   const inicio = horaAMinutos(horaInicio)
@@ -119,7 +145,6 @@ function generarSlots(horaInicio, horaFin, duracion) {
 // ─── Horas disponibles por servicio y fecha ───────────────────────────────────
 
 async function obtenerHorasDisponibles(fecha, servicioId) {
-  // 1. Obtener duración del servicio
   const { data: servicio, error: errServicio } = await supabase
     .from('servicios')
     .select('duracion_minutos')
@@ -131,10 +156,8 @@ async function obtenerHorasDisponibles(fecha, servicioId) {
     return []
   }
 
-  const duracion = servicio.duracion_minutos
-
-  // 2. Obtener franjas del día de la semana correspondiente
-  const diaSemana = new Date(fecha + 'T12:00:00').getDay() // 0=Dom ... 6=Sáb
+  const duracion  = servicio.duracion_minutos
+  const diaSemana = new Date(fecha + 'T12:00:00').getDay()
 
   const { data: franjas, error: errFranjas } = await supabase
     .from('horarios')
@@ -145,13 +168,10 @@ async function obtenerHorasDisponibles(fecha, servicioId) {
 
   if (errFranjas || !franjas || franjas.length === 0) return []
 
-  // 3. Generar todos los slots posibles del día
   const todosLosSlots = franjas.flatMap(f =>
     generarSlots(f.hora_inicio, f.hora_fin, duracion)
   )
 
-  // 4. Obtener horas ya ocupadas ese día (cualquier servicio confirmado)
-  //    Un slot está ocupado si hay una cita que solape con él
   const { data: citasDelDia } = await supabase
     .from('citas')
     .select('hora, servicios(duracion_minutos)')
@@ -161,16 +181,14 @@ async function obtenerHorasDisponibles(fecha, servicioId) {
   const ocupados = new Set()
 
   for (const cita of (citasDelDia || [])) {
-    const citaInicio  = horaAMinutos(cita.hora)
+    const citaInicio   = horaAMinutos(cita.hora)
     const citaDuracion = cita.servicios?.duracion_minutos || 30
-    const citaFin     = citaInicio + citaDuracion
+    const citaFin      = citaInicio + citaDuracion
 
-    // Marca como ocupado cualquier slot que solape con esta cita
     for (const slot of todosLosSlots) {
       const slotInicio = horaAMinutos(slot)
       const slotFin    = slotInicio + duracion
 
-      // Hay solapamiento si los intervalos se cruzan
       if (slotInicio < citaFin && slotFin > citaInicio) {
         ocupados.add(slot)
       }
@@ -181,9 +199,10 @@ async function obtenerHorasDisponibles(fecha, servicioId) {
 }
 
 module.exports = {
+  obtenerServicios,
+  invalidarCacheServicios,
   guardarCita,
   obtenerCitasCliente,
   cancelarCita,
   obtenerHorasDisponibles,
-  SERVICIOS
 }

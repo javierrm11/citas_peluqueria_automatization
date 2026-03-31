@@ -156,7 +156,7 @@ Hola
 - ✅ Confirmación por botón (no solo texto)
 - ⬜ Integración con Google Calendar
 - ⬜ Panel admin (dashboard)
-- ⬜ Horarios personalizados por servicio
+- ✅ Horarios personalizados por servicio
 - ⬜ Multi-empleado (varios barberos)
 - ⬜ IA para entender texto libre ("quiero cortarme mañana")
 
