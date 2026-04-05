@@ -399,6 +399,26 @@ async function procesarMensaje(telefono, texto) {
 
       } else {
         await enviarMensaje(telefono, `⚠️ Por favor selecciona un día del menú.`)
+        await enviarLista(telefono, {
+          cabecera: `📅 ${servicio} con ${barberoNombre}`,
+          cuerpo:   'Elige el día que prefieras:',
+          pie:      'Escribe 0 para volver al menú',
+          boton:    'Ver días',
+          secciones: [{
+            titulo: 'Próximos días disponibles',
+            filas: fechasDisponibles.map((f, j) => {
+              const d       = new Date(f + 'T12:00:00')
+              const hayHoras = disponibilidad[j].length > 0
+              return {
+                id:          `fecha_${j}`,
+                titulo:      `${DIAS[d.getDay()]} ${f}`,
+                descripcion: hayHoras
+                  ? `${disponibilidad[j].length} horario${disponibilidad[j].length > 1 ? 's' : ''} disponible${disponibilidad[j].length > 1 ? 's' : ''}`
+                  : '🔴 Sin horarios disponibles',
+              }
+            }),
+          }],
+        })
       }
       break
     }
@@ -435,6 +455,28 @@ async function procesarMensaje(telefono, texto) {
 
       } else {
         await enviarMensaje(telefono, `⚠️ Por favor selecciona una hora del menú.`)
+        const manana = horasEnLista.filter(h => parseInt(h.split(':')[0]) < 14).slice(0, 10)
+        const tarde  = horasEnLista.filter(h => parseInt(h.split(':')[0]) >= 14).slice(0, 10)
+        const secciones = []
+        if (manana.length > 0) {
+          secciones.push({
+            titulo: '🌅 Mañana',
+            filas: manana.map((h, j) => ({ id: `hora_${j}`, titulo: h })),
+          })
+        }
+        if (tarde.length > 0) {
+          secciones.push({
+            titulo: '🌇 Tarde',
+            filas: tarde.map((h, j) => ({ id: `hora_${manana.length + j}`, titulo: h })),
+          })
+        }
+        await enviarLista(telefono, {
+          cabecera: `🕐 ${DIAS[new Date(fecha + 'T12:00:00').getDay()]} ${fecha}`,
+          cuerpo:   `Horarios disponibles con *${barberoNombre}*:`,
+          pie:      'Escribe 0 para volver al menú',
+          boton:    'Ver horarios',
+          secciones,
+        })
       }
       break
     }
