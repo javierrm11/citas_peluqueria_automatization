@@ -521,22 +521,5 @@ async function procesarMensaje(telefono, texto) {
   }
 }
 
-module.exports = { procesarMensaje }
-it guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-      } else {
-        await enviarMensaje(
-          telefono,
-          `⚠️ Elige una opción válida del 1 al ${citasPendientes.length}\n\n0️⃣ Volver al menú`
-        )
-      }
-      break
-    }
-
-    default: {
-      await guardarSesion(telefono, 'INICIO', {})
-      await procesarMensaje(telefono, texto)
-    }
-  }
-}
 
 module.exports = { procesarMensaje }
