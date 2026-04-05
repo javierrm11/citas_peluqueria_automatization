@@ -398,22 +398,25 @@ async function procesarMensaje(telefono, texto) {
         })
 
       } else {
-        await enviarMensaje(telefono, `⚠️ Por favor selecciona un día del menú.`)
+        // Re-consultar disponibilidad fresca para reenviar la lista
+        const dispFresca = await Promise.all(
+          fechasDisponibles.map(f => obtenerHorasDisponibles(f, servicioId, barberoId))
+        )
         await enviarLista(telefono, {
           cabecera: `📅 ${servicio} con ${barberoNombre}`,
-          cuerpo:   'Elige el día que prefieras:',
+          cuerpo:   '⚠️ Selecciona un día del menú:',
           pie:      'Escribe 0 para volver al menú',
           boton:    'Ver días',
           secciones: [{
             titulo: 'Próximos días disponibles',
             filas: fechasDisponibles.map((f, j) => {
-              const d       = new Date(f + 'T12:00:00')
-              const hayHoras = disponibilidad[j].length > 0
+              const d        = new Date(f + 'T12:00:00')
+              const n        = dispFresca[j]?.length ?? 0
               return {
                 id:          `fecha_${j}`,
                 titulo:      `${DIAS[d.getDay()]} ${f}`,
-                descripcion: hayHoras
-                  ? `${disponibilidad[j].length} horario${disponibilidad[j].length > 1 ? 's' : ''} disponible${disponibilidad[j].length > 1 ? 's' : ''}`
+                descripcion: n > 0
+                  ? `${n} horario${n > 1 ? 's' : ''} disponible${n > 1 ? 's' : ''}`
                   : '🔴 Sin horarios disponibles',
               }
             }),
