@@ -159,7 +159,7 @@ Hola
 - ✅ Horarios personalizados por servicio
 - ✅ Multi-empleado (varios barberos)
 - ⬜ IA para entender texto libre ("quiero cortarme mañana")
-- ⬜ 3️⃣ Mié 2026-04-08 si no hay citas dispoibles que ponga lleno
+- ✅ 3️⃣ Mié 2026-04-08 si no hay citas dispoibles que ponga lleno
 
 ## 📌 Notas
 
