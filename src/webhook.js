@@ -30,11 +30,15 @@ router.post("/", async (req, res) => {
         const msg = messages[0];
         const telefono = msg.from;
 
-        // ← esto es lo que cambia
-        const texto =
-          msg.type === "interactive"
-            ? msg.interactive.button_reply.id
-            : msg.text?.body || "";
+        let texto = ""
+        if (msg.type === "interactive") {
+          texto =
+            msg.interactive.button_reply?.id ||
+            msg.interactive.list_reply?.id   ||
+            ""
+        } else {
+          texto = msg.text?.body || ""
+        }
 
         console.log(`📩 Mensaje de ${telefono}: ${texto}`);
         await procesarMensaje(telefono, texto);
