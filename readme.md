@@ -1,180 +1,284 @@
-# 💈 Bot de WhatsApp para Gestión de Citas – Peluquería Javier
+# 💈 Bot de WhatsApp — Peluquería Javier
 
-Este proyecto es un bot de WhatsApp desarrollado en Node.js que permite a los clientes gestionar sus citas de forma automática.
+Bot de WhatsApp desarrollado en Node.js que permite a los clientes gestionar sus citas de forma automática mediante un flujo conversacional sencillo.
 
-## 🚀 Funcionalidades
+---
 
-El bot permite a los usuarios:
+## 🚀 Funcionalidades implementadas
 
-- 📅 Reservar una cita
-- 👀 Ver sus citas próximas
-- ❌ Cancelar una cita
-- 💬 Hablar con soporte
+### Gestión de citas
+- 📅 Reservar una cita paso a paso (servicio → barbero → fecha → hora → confirmación)
+- 👀 Ver citas próximas confirmadas
+- ❌ Cancelar una cita existente
+- 💬 Contactar con soporte humano
 
-Todo mediante un flujo conversacional sencillo dentro de WhatsApp.
+### Flujo inteligente de reserva
+- Selección de **servicio** desde catálogo dinámico (cargado desde Supabase)
+- Selección de **barbero** filtrado por servicio y activo
+- Selección de **fecha** — próximos 4 días hábiles (sin domingos), con indicador 🔴 si no hay horas disponibles
+- Selección de **hora** con paginación (9 horas por página, escribe `más` para ver más)
+- **Confirmación con botones interactivos** (✅ Confirmar / ❌ Cancelar) via WhatsApp Interactive API
 
-## 🧠 Cómo funciona
+### Disponibilidad real
+- Los slots de hora se calculan a partir de los **horarios configurados por barbero** (`horarios_barbero`)
+- Se descuentan automáticamente las citas ya confirmadas evitando solapamientos
+- La duración del servicio se tiene en cuenta al bloquear huecos
 
-El bot utiliza un sistema de sesiones por usuario (teléfono) para mantener el estado de la conversación.
+### Sesiones persistentes
+- Las sesiones se guardan en Supabase (tabla `sesiones`) — **no se pierden al reiniciar el servidor**
+- Cada usuario mantiene su estado y datos entre mensajes
 
-Cada usuario pasa por distintos estados:
+### Recordatorios automáticos
+- Cron diario a las **9:00 (Europe/Madrid)** que envía un recordatorio 24h antes de cada cita
+- Filtra solo citas `confirmadas` con `recordatorio_enviado = false`
+- Marca `recordatorio_enviado = true` tras el envío para evitar duplicados
 
-- `INICIO`
-- `ESPERANDO_OPCION`
-- `ELIGIENDO_SERVICIO`
-- `ELIGIENDO_FECHA`
-- `ELIGIENDO_HORA`
-- `CANCELANDO_CITA`
-- `SOPORTE`
+### Navegación
+- `0` desde el menú principal → despedida y cierre de sesión
+- `0` desde cualquier otro estado → vuelve al menú principal
 
-Esto permite guiar al usuario paso a paso sin perder contexto.
+---
 
 ## 🏗️ Estructura del proyecto
 
 ```
-/services
-  ├── whatsapp.js        # Envío de mensajes
-  ├── citas.js           # Lógica de citas (CRUD)
-
-procesarMensaje.js       # Lógica principal del bot
-recordatorios.js         # Recordatorios automáticos (cron)
+bot/
+├── index.js                    # Entrada: Express + cron de recordatorios
+├── src/
+│   ├── webhook.js              # Recibe y enruta mensajes de WhatsApp
+│   ├── bot/
+│   │   ├── estados.js          # Máquina de estados — lógica principal del bot
+│   │   └── recordatorios.js    # Cron de recordatorios automáticos
+│   ├── services/
+│   │   ├── citas.js            # CRUD de citas, slots, barberos, servicios
+│   │   └── whatsapp.js         # Envío de mensajes, botones y plantillas
+│   └── database/
+│       └── db.js               # Cliente Supabase
 ```
 
-## 📦 Dependencias principales
+---
 
-- Node.js
-- Sistema de envío de WhatsApp (API tipo WhatsApp Cloud / Twilio / Baileys)
-- `@supabase/supabase-js` — base de datos
-- `node-cron` — recordatorios automáticos
+## 🧠 Máquina de estados
 
-## 🔧 Funciones clave
+| Estado | Descripción |
+|--------|-------------|
+| `INICIO` | Primer contacto — muestra el menú de bienvenida |
+| `ESPERANDO_OPCION` | Menú principal (1-4 + 0) |
+| `ELIGIENDO_SERVICIO` | El usuario elige qué servicio quiere |
+| `ELIGIENDO_BARBERO` | El usuario elige con qué barbero |
+| `ELIGIENDO_FECHA` | El usuario elige el día (próximos 4 días hábiles) |
+| `ELIGIENDO_HORA` | El usuario elige la hora disponible |
+| `CONFIRMANDO_CITA` | Resumen + botones de confirmar / cancelar |
+| `CANCELANDO_CITA` | Lista de citas para cancelar |
+| `SOPORTE` | Mensaje libre que queda registrado |
 
-### 📩 `procesarMensaje(telefono, texto)`
+---
 
-Función principal que gestiona todo el flujo del bot.
+## 🔧 Servicios y funciones clave
 
-- Detecta el estado del usuario
-- Procesa su respuesta
-- Devuelve el siguiente mensaje
+### `estados.js` — `procesarMensaje(telefono, texto)`
+Función principal. Lee el estado de la sesión desde Supabase, procesa la respuesta del usuario y avanza al siguiente estado.
 
-### 📅 Servicios de citas
+### `citas.js`
+| Función | Descripción |
+|---------|-------------|
+| `obtenerServicios()` | Catálogo desde BD con cache en memoria |
+| `invalidarCacheServicios()` | Fuerza recarga del catálogo |
+| `obtenerBarberosPorServicio(servicioId)` | Barberos activos para un servicio |
+| `obtenerOCrearCliente(telefono)` | Upsert de cliente por teléfono |
+| `guardarCita(...)` | Inserta cita en estado `confirmada` |
+| `obtenerCitasCliente(telefono)` | Citas futuras confirmadas del cliente |
+| `cancelarCita(citaId)` | Pone estado `cancelada` |
+| `obtenerHorasDisponibles(fecha, servicioId, barberoId)` | Calcula slots libres restando citas existentes |
 
-Importados desde `services/citas.js`:
+### `whatsapp.js`
+| Función | Descripción |
+|---------|-------------|
+| `enviarMensaje(telefono, texto)` | Mensaje de texto libre |
+| `enviarBotones(telefono, cuerpo, botones, pie)` | Mensaje interactivo con hasta 3 botones |
+| `enviarPlantilla(telefono, plantilla, idioma)` | Plantilla aprobada por Meta (para iniciar conversación) |
 
-- `guardarCita()`
-- `obtenerCitasCliente()`
-- `cancelarCita()`
-- `obtenerHorasDisponibles()`
-- `SERVICIOS` (catálogo de servicios)
+### `recordatorios.js`
+| Función | Descripción |
+|---------|-------------|
+| `iniciarRecordatorios()` | Lanza el cron diario a las 9:00 |
+| `enviarRecordatorios()` | Obtiene citas de mañana y envía mensajes |
 
-### 💬 Servicio de WhatsApp
+---
 
-Desde `services/whatsapp.js`:
+## 🗄️ Tablas de Supabase utilizadas
 
-- `enviarMensaje(telefono, mensaje)`
+| Tabla | Descripción |
+|-------|-------------|
+| `clientes` | `id`, `telefono` |
+| `servicios` | `id`, `nombre`, `precio`, `duracion_minutos` |
+| `barberos` | `id`, `nombre`, `activo` |
+| `barbero_servicios` | Relación N:M barbero ↔ servicio |
+| `horarios_barbero` | `barbero_id`, `dia_semana` (1=Lun…6=Sáb), `hora_inicio`, `hora_fin`, `activo` |
+| `citas` | `cliente_id`, `servicio_id`, `barbero_id`, `fecha`, `hora`, `estado`, `recordatorio_enviado` |
+| `sesiones` | `telefono`, `estado`, `datos` (JSONB), `updated_at` |
 
-### 🔔 Recordatorios automáticos
+---
 
-Desde `recordatorios.js`:
+## 📦 Variables de entorno
 
-- `iniciarRecordatorios()` — lanza un cron diario a las 15:20 (Europe/Madrid)
-- Consulta en Supabase las citas del día siguiente
-- Envía un mensaje de recordatorio a cada cliente por WhatsApp
+Crea un archivo `.env` en la raíz del bot con:
 
-Activar en `index.js`:
+```env
+# WhatsApp Cloud API (Meta)
+ACCESS_TOKEN=         # Token de acceso permanente
+PHONE_NUMBER_ID=      # ID del número de WhatsApp
+VERIFY_TOKEN=         # Token que defines tú para verificar el webhook
 
-```js
-const { iniciarRecordatorios } = require('./recordatorios')
-iniciarRecordatorios()
+# Supabase
+SUPABASE_URL=         # URL del proyecto Supabase
+SUPABASE_KEY=         # anon key o service_role key (para saltar RLS en cron)
 ```
 
-## ✂️ Servicios disponibles
+---
 
-```
-1️⃣ Corte       - 15€
-2️⃣ Tinte       - 40€
-3️⃣ Barba       - 10€
-4️⃣ Corte+Barba - 22€
-```
-
-## 🔄 Flujo de reserva
-
-1. Usuario escribe cualquier mensaje
-2. Bot muestra menú principal
-3. Usuario elige "Reservar cita"
-4. Selecciona servicio
-5. Selecciona fecha disponible
-6. Selecciona hora
-7. Se guarda la cita en el sistema
-
-## 🔄 Navegación
-
-- `0` desde el menú principal → despedida y cierre de sesión
-- `0` desde cualquier otro estado → vuelve al menú principal sin perder sesión
-
-## 📆 Lógica de fechas
-
-- Se generan automáticamente los próximos 4 días disponibles
-- Se excluyen los domingos
-- Se muestran en formato simple para el usuario
-
-## ⚠️ Manejo de errores
-
-El bot controla:
-
-- Opciones inválidas
-- Días sin disponibilidad
-- Errores al guardar citas
-- Cancelaciones incorrectas
-
-## 🧪 Ejemplo de uso
-
-**Usuario:**
-
-```
-Hola
-```
-
-**Bot:**
-
-```
-👋 ¡Hola! Bienvenido a Peluquería Javier
-
-¿Qué deseas hacer?
-
-1️⃣ Reservar cita
-2️⃣ Ver mis citas
-3️⃣ Cancelar cita
-4️⃣ Hablar con soporte
-0️⃣ Salir
-```
-
-## 🧠 Posibles mejoras
-
-- ✅ Recordatorios automáticos (24h antes)
-- ✅ Opción de soporte / contacto directo
-- ✅ Confirmación por botón (no solo texto)
-- ⬜ Integración con Google Calendar
-- ✅ Panel admin (dashboard)
-- ✅ Horarios personalizados por servicio
-- ✅ Multi-empleado (varios barberos)
-- ⬜ IA para entender texto libre ("quiero cortarme mañana")
-- ✅ 3️⃣ Mié 2026-04-08 si no hay citas dispoibles que ponga lleno
-
-## 📌 Notas
-
-- Las sesiones se guardan en memoria (`objeto sesiones`), por lo que:
-  - ❗ Se pierden si reinicias el servidor
-  - 👉 Recomendado: usar Redis o base de datos
-- Los recordatorios usan `SUPABASE_SERVICE_ROLE_KEY` para saltarse las RLS policies
-
-## 🛠️ Instalación
+## 🛠️ Instalación y arranque
 
 ```bash
+cd bot
 npm install
 node index.js
 ```
 
+El servidor arranca en el puerto `3000` (o el que definas en `PORT`).
+
+Para exponer el webhook en local durante desarrollo:
+```bash
+npx ngrok http 3000
+# Luego configura la URL en Meta Developer Console → Webhooks
+```
+
+---
+
+## 🔄 Flujo completo de reserva
+
+```
+Usuario: "Hola"
+  → Menú principal
+
+Usuario: "1" (Reservar)
+  → Lista de servicios (desde BD)
+
+Usuario: "1" (Corte)
+  → Lista de barberos que realizan ese servicio
+
+Usuario: "2" (Carlos)
+  → Próximos 4 días con indicador de disponibilidad
+
+Usuario: "1" (Lunes)
+  → Horas disponibles paginadas (máx 9, escribe "más" para ver más)
+
+Usuario: "3" (11:00)
+  → Resumen + botones [✅ Confirmar] [❌ Cancelar]
+
+Usuario: pulsa "Confirmar"
+  → Cita guardada en Supabase ✅
+  → Mensaje de confirmación con todos los datos
+```
+
+---
+
+## ⚠️ Manejo de errores
+
+- Opciones inválidas → aviso y repetición del paso actual
+- Días sin disponibilidad → marcados como 🔴 Sin horas
+- Error al guardar la cita → mensaje de error y vuelta al menú
+- Cancelación incorrecta → solicita opción válida
+- Barbero sin servicios → aviso y vuelta al menú
+
+---
+
+## 🐛 Bugs conocidos / Deuda técnica
+
+| Problema | Estado |
+|----------|--------|
+| Cache de servicios sin TTL — cambios en el admin no se reflejan hasta reiniciar | ⬜ Pendiente |
+| Rate limiting por teléfono — un usuario puede spamear el webhook | ⬜ Pendiente |
+| Sin validación de que la hora elegida no sea pasada (reservas en el día de hoy) | ⬜ Pendiente |
+
+---
+
+## 🗺️ Próximas mejoras
+
+### 🔴 Alta prioridad
+
+#### Cache de servicios con TTL
+La cache actual (`_serviciosCache`) nunca expira. Si el admin modifica servicios en el panel, el bot sigue sirviendo el catálogo antiguo hasta reinicio.
+- Añadir expiración de 10 minutos o llamar a `invalidarCacheServicios()` desde un endpoint interno que el admin active al guardar.
+
+#### Rate limiting por teléfono
+Sin límite, un usuario puede enviar miles de mensajes y saturar el bot o la API de WhatsApp.
+- Middleware simple con un `Map` en memoria: máx. 10 mensajes por número cada 60 segundos.
+
+#### Validar horas pasadas al reservar hoy
+Si el usuario reserva para el día de hoy, los slots generados pueden incluir horas que ya pasaron.
+- Filtrar en `obtenerHorasDisponibles` los slots anteriores a `Date.now()` cuando `fecha === hoy`.
+
+---
+
+### 🟠 Importante
+
+#### Reprogramar cita
+Actualmente el cliente solo puede cancelar y volver a reservar. Añadir opción `5️⃣ Reprogramar cita` en el menú.
+- Nuevo estado `REPROGRAMANDO_CITA` que lista las citas, cancela la elegida y lanza el flujo de reserva con el mismo servicio y barbero preseleccionados.
+
+#### Nombre del cliente en el onboarding
+La tabla `clientes` solo guarda `telefono`. En el primer contacto, preguntar el nombre y guardarlo.
+- Añadir campo `nombre` a `clientes`.
+- Estado `PIDIENDO_NOMBRE` tras el `INICIO` si el cliente no tiene nombre guardado.
+- Personalizar todos los mensajes: `"¡Hola, Miguel! ¿Qué deseas hacer?"`
+
+#### Notificación al barbero al confirmar una cita
+Cuando un cliente confirma una cita, enviar un WhatsApp al barbero asignado.
+- Añadir campo `telefono` a la tabla `barberos`.
+- En `guardarCita()`, tras insertar, llamar a `enviarMensaje(barbero.telefono, resumen)`.
+
+---
+
+### 🟡 Mejoras de UX
+
+#### Lista de horas en formato de franjas
+En vez de mostrar `1️⃣ 10:00 / 2️⃣ 10:30 / 3️⃣ 11:00...`, agrupar por mañana/tarde:
+```
+🌅 Mañana: 10:00 · 10:30 · 11:00
+🌇 Tarde:  16:00 · 16:30 · 17:00
+```
+
+#### Confirmación por plantilla de WhatsApp
+Usar `enviarPlantilla()` (ya implementada) para el recordatorio de confirmación — permite enviar el mensaje aunque el cliente no haya escrito en las últimas 24h.
+
+#### Mensaje de bienvenida diferente para clientes recurrentes
+Si el cliente ya tiene citas previas, personalizar el saludo:
+```
+"¡Hola de nuevo, Miguel! ¿Volvemos a ponerte guapo? 😄"
+```
+
+---
+
+### 🟢 Futuro / IA
+
+#### Comprensión de lenguaje natural
+Integrar Claude Haiku (API de Anthropic) para interpretar texto libre antes de entrar al flujo de estados:
+```
+Usuario: "quiero cortarme mañana por la mañana con javier"
+→ Extrae: servicio=Corte, fecha=mañana, preferencia=mañana, barbero=Javier
+→ Salta directamente al paso de confirmar hora
+```
+- Reducir la fricción del menú numérico para usuarios habituales.
+- El flujo estructurado sigue siendo el fallback para casos ambiguos.
+
+#### Bloqueos y vacaciones
+Nueva tabla `bloqueos` con `barbero_id`, `fecha_inicio`, `fecha_fin`, `motivo`.
+- El bot excluye esas fechas al mostrar disponibilidad.
+- El admin puede configurarlos desde el panel.
+
+---
+
 ## 👨‍💻 Autor
 
-Desarrollado para automatizar la gestión de citas de peluquería y mejorar la experiencia del cliente.
+Desarrollado para automatizar la gestión de citas de Peluquería Javier y mejorar la experiencia del cliente vía WhatsApp.
