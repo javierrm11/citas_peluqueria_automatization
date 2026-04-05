@@ -154,7 +154,6 @@ async function procesarMensaje(telefono, texto) {
         const servicio   = SERVICIOS[texto].nombre
         const servicioId = SERVICIOS[texto].id
 
-        // Buscar barberos que hacen este servicio
         const barberos = await obtenerBarberosPorServicio(servicioId)
 
         if (barberos.length === 0) {
@@ -173,11 +172,7 @@ async function procesarMensaje(telefono, texto) {
         msg += `\n0️⃣ Volver al menú`
 
         await enviarMensaje(telefono, msg)
-        await guardarSesion(telefono, 'ELIGIENDO_BARBERO', {
-          servicio,
-          servicioId,
-          barberos
-        })
+        await guardarSesion(telefono, 'ELIGIENDO_BARBERO', { servicio, servicioId, barberos })
       } else {
         await enviarMensaje(
           telefono,
@@ -195,7 +190,7 @@ async function procesarMensaje(telefono, texto) {
         const barbero   = barberos[opcionBarbero - 1]
         const barberoId = barbero.id
 
-        // Generar fechas disponibles (próximos 4 días sin domingo)
+        // Generar próximos 4 días sin domingo y comprobar disponibilidad de cada uno
         const hoy    = new Date()
         const fechas = []
         let contador = 0
@@ -211,11 +206,19 @@ async function procesarMensaje(telefono, texto) {
           i++
         }
 
+        // Comprobar disponibilidad de cada fecha en paralelo
+        const disponibilidad = await Promise.all(
+          fechas.map(f => obtenerHorasDisponibles(f, servicioId, barberoId))
+        )
+
         const dias = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
         let msg = `📅 Elige un día para tu *${servicio}* con *${barbero.nombre}*:\n\n`
+
         fechas.forEach((f, idx) => {
-          const d = new Date(f + 'T12:00:00')
-          msg += `${idx + 1}️⃣ ${dias[d.getDay()]} ${f}\n`
+          const d        = new Date(f + 'T12:00:00')
+          const hayHoras = disponibilidad[idx].length > 0
+          const etiqueta = hayHoras ? '' : ' — 🔴 Sin horas'
+          msg += `${idx + 1}️⃣ ${dias[d.getDay()]} ${f}${etiqueta}\n`
         })
         msg += `\n0️⃣ Volver al menú`
 
@@ -247,18 +250,26 @@ async function procesarMensaje(telefono, texto) {
         if (horasLibres.length === 0) {
           await enviarMensaje(
             telefono,
-            `😔 *${barberoNombre}* no tiene horas disponibles el ${fecha}.\n\nElige otro día:\n\n0️⃣ Volver al menú`
+            `🔴 *${barberoNombre}* no tiene horas disponibles el ${fecha}.\n\nElige otro día:\n\n0️⃣ Volver al menú`
           )
         } else {
+          // Paginación: mostrar máximo 9 horas
+          const pagina       = 0
+          const horasPagina  = horasLibres.slice(0, 9)
+          const hayMas       = horasLibres.length > 9
+
           let msg = `🕐 Horas disponibles con *${barberoNombre}* el *${fecha}*:\n\n`
-          horasLibres.forEach((h, idx) => {
+          horasPagina.forEach((h, idx) => {
             msg += `${idx + 1}️⃣ ${h}\n`
           })
+          if (hayMas) msg += `\n➡️ Escribe *más* para ver más horas`
           msg += `\n0️⃣ Volver al menú`
+
           await enviarMensaje(telefono, msg)
           await guardarSesion(telefono, 'ELIGIENDO_HORA', {
             servicio, servicioId, barberoId, barberoNombre, fecha,
-            horasDisponibles: horasLibres
+            horasDisponibles: horasLibres,
+            pagina
           })
         }
       } else {
@@ -271,11 +282,42 @@ async function procesarMensaje(telefono, texto) {
     }
 
     case 'ELIGIENDO_HORA': {
-      const opcionHora = parseInt(texto)
-      const { servicio, servicioId, barberoId, barberoNombre, fecha, horasDisponibles } = datos
+      const { servicio, servicioId, barberoId, barberoNombre, fecha, horasDisponibles, pagina } = datos
+      const paginaActual  = pagina || 0
+      const POR_PAGINA    = 9
+      const offset        = paginaActual * POR_PAGINA
 
-      if (opcionHora >= 1 && opcionHora <= horasDisponibles.length) {
-        const hora = horasDisponibles[opcionHora - 1]
+      // El usuario pide más horas
+      if (texto.toLowerCase() === 'más' || texto.toLowerCase() === 'mas') {
+        const siguientePagina = paginaActual + 1
+        const horasPagina     = horasDisponibles.slice(siguientePagina * POR_PAGINA, siguientePagina * POR_PAGINA + POR_PAGINA)
+
+        if (horasPagina.length === 0) {
+          await enviarMensaje(telefono, `⚠️ No hay más horas disponibles.\n\n0️⃣ Volver al menú`)
+          break
+        }
+
+        const hayMas = horasDisponibles.length > (siguientePagina + 1) * POR_PAGINA
+        let msg = `🕐 Más horas disponibles:\n\n`
+        horasPagina.forEach((h, idx) => {
+          msg += `${idx + 1}️⃣ ${h}\n`
+        })
+        if (hayMas) msg += `\n➡️ Escribe *más* para ver más horas`
+        msg += `\n0️⃣ Volver al menú`
+
+        await enviarMensaje(telefono, msg)
+        await guardarSesion(telefono, 'ELIGIENDO_HORA', {
+          servicio, servicioId, barberoId, barberoNombre, fecha,
+          horasDisponibles, pagina: siguientePagina
+        })
+        break
+      }
+
+      const opcionHora = parseInt(texto)
+      const horasPagina = horasDisponibles.slice(offset, offset + POR_PAGINA)
+
+      if (opcionHora >= 1 && opcionHora <= horasPagina.length) {
+        const hora = horasPagina[opcionHora - 1]
 
         await enviarBotones(
           telefono,
@@ -291,13 +333,11 @@ async function procesarMensaje(telefono, texto) {
           ],
           'Peluquería Javier'
         )
-        await guardarSesion(telefono, 'CONFIRMANDO_CITA', {
-          servicio, servicioId, barberoId, barberoNombre, fecha, hora
-        })
+        await guardarSesion(telefono, 'CONFIRMANDO_CITA', { servicio, servicioId, barberoId, barberoNombre, fecha, hora })
       } else {
         await enviarMensaje(
           telefono,
-          `⚠️ Elige una opción del 1 al ${horasDisponibles.length}\n\n0️⃣ Volver al menú`
+          `⚠️ Elige una opción del 1 al ${horasPagina.length}\n\n0️⃣ Volver al menú`
         )
       }
       break
