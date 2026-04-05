@@ -2,7 +2,6 @@ const supabase = require('../database/db')
 
 // ─── Servicios desde BD ───────────────────────────────────────────────────────
 
-// Cache en memoria para no consultar en cada mensaje
 let _serviciosCache = null
 
 async function obtenerServicios() {
@@ -18,23 +17,39 @@ async function obtenerServicios() {
     return {}
   }
 
-  // Construye el mismo formato que antes: { '1': { id, nombre, precio }, ... }
   _serviciosCache = {}
   data.forEach((s, idx) => {
     _serviciosCache[String(idx + 1)] = {
-      id:                s.id,
-      nombre:            s.nombre,
-      precio:            `${s.precio}€`,
-      duracion_minutos:  s.duracion_minutos
+      id:               s.id,
+      nombre:           s.nombre,
+      precio:           `${s.precio}€`,
+      duracion_minutos: s.duracion_minutos
     }
   })
 
   return _serviciosCache
 }
 
-// Invalida el cache (útil si cambias servicios en BD sin reiniciar)
 function invalidarCacheServicios() {
   _serviciosCache = null
+}
+
+// ─── Barberos disponibles para un servicio ────────────────────────────────────
+
+async function obtenerBarberosPorServicio(servicioId) {
+  const { data, error } = await supabase
+    .from('barbero_servicios')
+    .select('barberos(id, nombre)')
+    .eq('servicio_id', servicioId)
+    .eq('barberos.activo', true)
+
+  if (error || !data) {
+    console.error('❌ Error obteniendo barberos:', error)
+    return []
+  }
+
+  // Filtra nulls (barberos inactivos no devuelven datos)
+  return data.map(r => r.barberos).filter(Boolean)
 }
 
 // ─── Cliente ──────────────────────────────────────────────────────────────────
@@ -59,7 +74,7 @@ async function obtenerOCrearCliente(telefono) {
 
 // ─── Guardar cita ─────────────────────────────────────────────────────────────
 
-async function guardarCita(telefono, servicioId, fecha, hora) {
+async function guardarCita(telefono, servicioId, barberoId, fecha, hora) {
   const cliente = await obtenerOCrearCliente(telefono)
 
   const { data, error } = await supabase
@@ -67,6 +82,7 @@ async function guardarCita(telefono, servicioId, fecha, hora) {
     .insert({
       cliente_id:           cliente.id,
       servicio_id:          servicioId,
+      barbero_id:           barberoId,
       fecha,
       hora,
       estado:               'confirmada',
@@ -79,7 +95,7 @@ async function guardarCita(telefono, servicioId, fecha, hora) {
   return data
 }
 
-// ─── Obtener citas del cliente (solo futuras y confirmadas) ───────────────────
+// ─── Obtener citas del cliente ────────────────────────────────────────────────
 
 async function obtenerCitasCliente(telefono) {
   const { data: cliente } = await supabase
@@ -94,7 +110,7 @@ async function obtenerCitasCliente(telefono) {
 
   const { data } = await supabase
     .from('citas')
-    .select('id, fecha, hora, servicios(nombre, precio)')
+    .select('id, fecha, hora, servicios(nombre, precio), barberos(nombre)')
     .eq('cliente_id', cliente.id)
     .eq('estado', 'confirmada')
     .gte('fecha', hoy)
@@ -142,9 +158,10 @@ function generarSlots(horaInicio, horaFin, duracion) {
   return slots
 }
 
-// ─── Horas disponibles por servicio y fecha ───────────────────────────────────
+// ─── Horas disponibles por barbero, servicio y fecha ─────────────────────────
 
-async function obtenerHorasDisponibles(fecha, servicioId) {
+async function obtenerHorasDisponibles(fecha, servicioId, barberoId) {
+  // 1. Duración del servicio
   const { data: servicio, error: errServicio } = await supabase
     .from('servicios')
     .select('duracion_minutos')
@@ -159,23 +176,28 @@ async function obtenerHorasDisponibles(fecha, servicioId) {
   const duracion  = servicio.duracion_minutos
   const diaSemana = new Date(fecha + 'T12:00:00').getDay()
 
+  // 2. Franjas horarias del barbero ese día
   const { data: franjas, error: errFranjas } = await supabase
-    .from('horarios')
+    .from('horarios_barbero')
     .select('hora_inicio, hora_fin')
+    .eq('barbero_id', barberoId)
     .eq('dia_semana', diaSemana)
     .eq('activo', true)
     .order('hora_inicio', { ascending: true })
 
   if (errFranjas || !franjas || franjas.length === 0) return []
 
+  // 3. Generar todos los slots del barbero ese día
   const todosLosSlots = franjas.flatMap(f =>
     generarSlots(f.hora_inicio, f.hora_fin, duracion)
   )
 
+  // 4. Citas ya confirmadas del barbero ese día
   const { data: citasDelDia } = await supabase
     .from('citas')
     .select('hora, servicios(duracion_minutos)')
     .eq('fecha', fecha)
+    .eq('barbero_id', barberoId)
     .eq('estado', 'confirmada')
 
   const ocupados = new Set()
@@ -201,6 +223,7 @@ async function obtenerHorasDisponibles(fecha, servicioId) {
 module.exports = {
   obtenerServicios,
   invalidarCacheServicios,
+  obtenerBarberosPorServicio,
   guardarCita,
   obtenerCitasCliente,
   cancelarCita,

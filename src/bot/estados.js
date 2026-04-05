@@ -1,6 +1,7 @@
 const { enviarMensaje, enviarBotones } = require('../services/whatsapp.js')
 const {
   obtenerServicios,
+  obtenerBarberosPorServicio,
   guardarCita,
   obtenerCitasCliente,
   cancelarCita,
@@ -10,7 +11,7 @@ const supabase = require('../database/db')
 
 const MENU = `─────────────────\n¿Qué deseas hacer ahora?\n\n1️⃣ Reservar cita\n2️⃣ Ver mis citas\n3️⃣ Cancelar cita\n4️⃣ Hablar con soporte\n0️⃣ Salir`
 
-// ─── Helpers de sesión (Supabase) ─────────────────────────────────────────────
+// ─── Helpers de sesión ────────────────────────────────────────────────────────
 
 async function obtenerSesion(telefono) {
   const { data, error } = await supabase
@@ -42,7 +43,6 @@ async function procesarMensaje(telefono, texto) {
   let { estado, datos } = await obtenerSesion(telefono)
   texto = texto.trim()
 
-  // Opción 0: salir desde menú principal, volver al menú desde cualquier otro estado
   if (texto === '0') {
     if (estado === 'ESPERANDO_OPCION' || estado === 'INICIO') {
       await enviarMensaje(telefono, `👋 ¡Hasta pronto! Si necesitas algo, escríbenos cuando quieras. 😊`)
@@ -73,7 +73,6 @@ async function procesarMensaje(telefono, texto) {
 
     case 'ESPERANDO_OPCION': {
       if (texto === '1') {
-        // Carga servicios desde BD y construye el mensaje dinámicamente
         const SERVICIOS = await obtenerServicios()
         const total     = Object.keys(SERVICIOS).length
 
@@ -94,7 +93,8 @@ async function procesarMensaje(telefono, texto) {
           let msg = '📅 *Tus próximas citas:*\n\n'
           citas.forEach((c, i) => {
             msg += `${i + 1}️⃣ ${c.fecha} a las ${c.hora.substring(0, 5)}\n`
-            msg += `   💈 ${c.servicios.nombre} - ${c.servicios.precio}€\n\n`
+            msg += `   💈 ${c.servicios.nombre} - ${c.servicios.precio}€\n`
+            msg += `   💇 ${c.barberos?.nombre || 'Sin asignar'}\n\n`
           })
           msg += MENU
           await enviarMensaje(telefono, msg)
@@ -109,7 +109,8 @@ async function procesarMensaje(telefono, texto) {
         } else {
           let msg = '❌ ¿Qué cita quieres cancelar?\n\n'
           citas.forEach((c, i) => {
-            msg += `${i + 1}️⃣ ${c.fecha} a las ${c.hora.substring(0, 5)} - ${c.servicios.nombre}\n`
+            msg += `${i + 1}️⃣ ${c.fecha} a las ${c.hora.substring(0, 5)}\n`
+            msg += `   💈 ${c.servicios.nombre} · 💇 ${c.barberos?.nombre || 'Sin asignar'}\n`
           })
           msg += `\n0️⃣ Volver al menú`
           await enviarMensaje(telefono, msg)
@@ -130,11 +131,7 @@ async function procesarMensaje(telefono, texto) {
         await enviarMensaje(
           telefono,
           `⚠️ Opción no válida. Por favor elige:\n\n` +
-          `1️⃣ Reservar cita\n` +
-          `2️⃣ Ver mis citas\n` +
-          `3️⃣ Cancelar cita\n` +
-          `4️⃣ Hablar con soporte\n` +
-          `0️⃣ Salir`
+          `1️⃣ Reservar cita\n2️⃣ Ver mis citas\n3️⃣ Cancelar cita\n4️⃣ Hablar con soporte\n0️⃣ Salir`
         )
       }
       break
@@ -150,13 +147,55 @@ async function procesarMensaje(telefono, texto) {
     }
 
     case 'ELIGIENDO_SERVICIO': {
-      const SERVICIOS      = await obtenerServicios()
+      const SERVICIOS          = await obtenerServicios()
       const { totalServicios } = datos
 
       if (SERVICIOS[texto]) {
         const servicio   = SERVICIOS[texto].nombre
         const servicioId = SERVICIOS[texto].id
 
+        // Buscar barberos que hacen este servicio
+        const barberos = await obtenerBarberosPorServicio(servicioId)
+
+        if (barberos.length === 0) {
+          await enviarMensaje(
+            telefono,
+            `😔 No hay barberos disponibles para *${servicio}* en este momento.\n\n${MENU}`
+          )
+          await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
+          break
+        }
+
+        let msg = `💇 ¿Con quién quieres tu *${servicio}*?\n\n`
+        barberos.forEach((b, idx) => {
+          msg += `${idx + 1}️⃣ ${b.nombre}\n`
+        })
+        msg += `\n0️⃣ Volver al menú`
+
+        await enviarMensaje(telefono, msg)
+        await guardarSesion(telefono, 'ELIGIENDO_BARBERO', {
+          servicio,
+          servicioId,
+          barberos
+        })
+      } else {
+        await enviarMensaje(
+          telefono,
+          `⚠️ Elige una opción del 1 al ${totalServicios}\n\n0️⃣ Volver al menú`
+        )
+      }
+      break
+    }
+
+    case 'ELIGIENDO_BARBERO': {
+      const { servicio, servicioId, barberos } = datos
+      const opcionBarbero = parseInt(texto)
+
+      if (opcionBarbero >= 1 && opcionBarbero <= barberos.length) {
+        const barbero   = barberos[opcionBarbero - 1]
+        const barberoId = barbero.id
+
+        // Generar fechas disponibles (próximos 4 días sin domingo)
         const hoy    = new Date()
         const fechas = []
         let contador = 0
@@ -173,7 +212,7 @@ async function procesarMensaje(telefono, texto) {
         }
 
         const dias = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
-        let msg = `📅 Elige un día para tu *${servicio}*:\n\n`
+        let msg = `📅 Elige un día para tu *${servicio}* con *${barbero.nombre}*:\n\n`
         fechas.forEach((f, idx) => {
           const d = new Date(f + 'T12:00:00')
           msg += `${idx + 1}️⃣ ${dias[d.getDay()]} ${f}\n`
@@ -181,11 +220,17 @@ async function procesarMensaje(telefono, texto) {
         msg += `\n0️⃣ Volver al menú`
 
         await enviarMensaje(telefono, msg)
-        await guardarSesion(telefono, 'ELIGIENDO_FECHA', { servicio, servicioId, fechasDisponibles: fechas })
+        await guardarSesion(telefono, 'ELIGIENDO_FECHA', {
+          servicio,
+          servicioId,
+          barberoId,
+          barberoNombre: barbero.nombre,
+          fechasDisponibles: fechas
+        })
       } else {
         await enviarMensaje(
           telefono,
-          `⚠️ Elige una opción del 1 al ${totalServicios}\n\n0️⃣ Volver al menú`
+          `⚠️ Elige una opción del 1 al ${barberos.length}\n\n0️⃣ Volver al menú`
         )
       }
       break
@@ -193,25 +238,28 @@ async function procesarMensaje(telefono, texto) {
 
     case 'ELIGIENDO_FECHA': {
       const opcionFecha = parseInt(texto)
-      const { fechasDisponibles, servicio, servicioId } = datos
+      const { fechasDisponibles, servicio, servicioId, barberoId, barberoNombre } = datos
 
       if (opcionFecha >= 1 && opcionFecha <= fechasDisponibles.length) {
         const fecha       = fechasDisponibles[opcionFecha - 1]
-        const horasLibres = await obtenerHorasDisponibles(fecha, servicioId)
+        const horasLibres = await obtenerHorasDisponibles(fecha, servicioId, barberoId)
 
         if (horasLibres.length === 0) {
           await enviarMensaje(
             telefono,
-            `😔 No hay horas disponibles el ${fecha}.\n\nElige otro día:\n\n0️⃣ Volver al menú`
+            `😔 *${barberoNombre}* no tiene horas disponibles el ${fecha}.\n\nElige otro día:\n\n0️⃣ Volver al menú`
           )
         } else {
-          let msg = `🕐 Horas disponibles para el *${fecha}*:\n\n`
+          let msg = `🕐 Horas disponibles con *${barberoNombre}* el *${fecha}*:\n\n`
           horasLibres.forEach((h, idx) => {
             msg += `${idx + 1}️⃣ ${h}\n`
           })
           msg += `\n0️⃣ Volver al menú`
           await enviarMensaje(telefono, msg)
-          await guardarSesion(telefono, 'ELIGIENDO_HORA', { servicio, servicioId, fecha, horasDisponibles: horasLibres })
+          await guardarSesion(telefono, 'ELIGIENDO_HORA', {
+            servicio, servicioId, barberoId, barberoNombre, fecha,
+            horasDisponibles: horasLibres
+          })
         }
       } else {
         await enviarMensaje(
@@ -224,7 +272,7 @@ async function procesarMensaje(telefono, texto) {
 
     case 'ELIGIENDO_HORA': {
       const opcionHora = parseInt(texto)
-      const { servicio, servicioId, fecha, horasDisponibles } = datos
+      const { servicio, servicioId, barberoId, barberoNombre, fecha, horasDisponibles } = datos
 
       if (opcionHora >= 1 && opcionHora <= horasDisponibles.length) {
         const hora = horasDisponibles[opcionHora - 1]
@@ -233,6 +281,7 @@ async function procesarMensaje(telefono, texto) {
           telefono,
           `🔍 *Resumen de tu cita:*\n\n` +
           `💈 Servicio: ${servicio}\n` +
+          `💇 Barbero: ${barberoNombre}\n` +
           `📅 Fecha: ${fecha}\n` +
           `🕐 Hora: ${hora}\n\n` +
           `¿Confirmamos la cita?`,
@@ -242,7 +291,9 @@ async function procesarMensaje(telefono, texto) {
           ],
           'Peluquería Javier'
         )
-        await guardarSesion(telefono, 'CONFIRMANDO_CITA', { servicio, servicioId, fecha, hora })
+        await guardarSesion(telefono, 'CONFIRMANDO_CITA', {
+          servicio, servicioId, barberoId, barberoNombre, fecha, hora
+        })
       } else {
         await enviarMensaje(
           telefono,
@@ -253,15 +304,16 @@ async function procesarMensaje(telefono, texto) {
     }
 
     case 'CONFIRMANDO_CITA': {
-      const { servicio, servicioId, fecha, hora } = datos
+      const { servicio, servicioId, barberoId, barberoNombre, fecha, hora } = datos
 
       if (texto === 'confirmar_cita') {
-        const cita = await guardarCita(telefono, servicioId, fecha, hora)
+        const cita = await guardarCita(telefono, servicioId, barberoId, fecha, hora)
         if (cita) {
           await enviarMensaje(
             telefono,
             `✅ *¡Cita confirmada!*\n\n` +
             `💈 Servicio: ${servicio}\n` +
+            `💇 Barbero: ${barberoNombre}\n` +
             `📅 Fecha: ${fecha}\n` +
             `🕐 Hora: ${hora}\n\n` +
             `Te esperamos 😊\n\n` +
@@ -286,7 +338,8 @@ async function procesarMensaje(telefono, texto) {
         await enviarBotones(
           telefono,
           `Por favor pulsa uno de los botones:\n\n` +
-          `💈 ${servicio} — ${fecha} a las ${hora}`,
+          `💈 ${servicio} · 💇 ${barberoNombre}\n` +
+          `📅 ${fecha} a las ${hora}`,
           [
             { id: 'confirmar_cita', title: '✅ Confirmar' },
             { id: 'cancelar_cita',  title: '❌ Cancelar'  }
@@ -308,7 +361,8 @@ async function procesarMensaje(telefono, texto) {
           telefono,
           `✅ *Cita cancelada:*\n\n` +
           `📅 ${citaACancelar.fecha} a las ${citaACancelar.hora.substring(0, 5)}\n` +
-          `💈 ${citaACancelar.servicios.nombre}\n\n` +
+          `💈 ${citaACancelar.servicios.nombre}\n` +
+          `💇 ${citaACancelar.barberos?.nombre || 'Sin asignar'}\n\n` +
           MENU
         )
         await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
