@@ -211,13 +211,6 @@ Usuario: pulsa "Confirmar"
 
 ### 🟠 Importante
 
-
-#### Nombre del cliente en el onboarding
-La tabla `clientes` solo guarda `telefono`. En el primer contacto, preguntar el nombre y guardarlo.
-- Añadir campo `nombre` a `clientes`.
-- Estado `PIDIENDO_NOMBRE` tras el `INICIO` si el cliente no tiene nombre guardado.
-- Personalizar todos los mensajes: `"¡Hola, Miguel! ¿Qué deseas hacer?"`
-
 #### Notificación al barbero al confirmar una cita
 Cuando un cliente confirma una cita, enviar un WhatsApp al barbero asignado.
 - Añadir campo `telefono` a la tabla `barberos`.
