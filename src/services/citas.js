@@ -2,10 +2,12 @@ const supabase = require('../database/db')
 
 // ─── Servicios desde BD ───────────────────────────────────────────────────────
 
-let _serviciosCache = null
+let _serviciosCache    = null
+let _serviciosCacheExp = 0
+const CACHE_TTL_MS     = 10 * 60 * 1000   // 10 minutos
 
 async function obtenerServicios() {
-  if (_serviciosCache) return _serviciosCache
+  if (_serviciosCache && Date.now() < _serviciosCacheExp) return _serviciosCache
 
   const { data, error } = await supabase
     .from('servicios')
@@ -14,7 +16,7 @@ async function obtenerServicios() {
 
   if (error || !data) {
     console.error('❌ Error obteniendo servicios:', error)
-    return {}
+    return _serviciosCache || {}   // devuelve la caché anterior si existe
   }
 
   _serviciosCache = {}
@@ -26,12 +28,14 @@ async function obtenerServicios() {
       duracion_minutos: s.duracion_minutos
     }
   })
+  _serviciosCacheExp = Date.now() + CACHE_TTL_MS
 
   return _serviciosCache
 }
 
 function invalidarCacheServicios() {
-  _serviciosCache = null
+  _serviciosCache    = null
+  _serviciosCacheExp = 0
 }
 
 // ─── Barberos disponibles para un servicio ────────────────────────────────────
