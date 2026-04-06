@@ -264,7 +264,7 @@ async function procesarMensaje(telefono, texto) {
         // Próximos 4 días hábiles (sin domingo)
         const hoy = new Date()
         const fechas = []
-        let i = 1
+        let i = 0
         while (fechas.length < 4) {
           const d = new Date(hoy)
           d.setDate(hoy.getDate() + i)
