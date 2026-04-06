@@ -216,9 +216,6 @@ Sin límite, un usuario puede enviar miles de mensajes y saturar el bot o la API
 
 ### 🟠 Importante
 
-#### Reprogramar cita
-Actualmente el cliente solo puede cancelar y volver a reservar. Añadir opción `5️⃣ Reprogramar cita` en el menú.
-- Nuevo estado `REPROGRAMANDO_CITA` que lista las citas, cancela la elegida y lanza el flujo de reserva con el mismo servicio y barbero preseleccionados.
 
 #### Nombre del cliente en el onboarding
 La tabla `clientes` solo guarda `telefono`. En el primer contacto, preguntar el nombre y guardarlo.
