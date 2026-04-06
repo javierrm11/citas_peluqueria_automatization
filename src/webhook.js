@@ -2,6 +2,32 @@ const express = require("express");
 const router = express.Router();
 const { procesarMensaje } = require("./bot/estados");
 
+// ─── Rate limiting por teléfono ───────────────────────────────────────────────
+const MAX_MENSAJES  = 10
+const VENTANA_MS    = 60_000   // 60 segundos
+const _rateLimitMap = new Map()
+
+function excedeLimite(telefono) {
+  const ahora = Date.now()
+  let registro = _rateLimitMap.get(telefono)
+
+  if (!registro || ahora - registro.inicio >= VENTANA_MS) {
+    registro = { inicio: ahora, count: 0 }
+  }
+
+  registro.count++
+  _rateLimitMap.set(telefono, registro)
+  return registro.count > MAX_MENSAJES
+}
+
+// Limpieza periódica para no acumular entradas de números inactivos
+setInterval(() => {
+  const ahora = Date.now()
+  for (const [tel, reg] of _rateLimitMap) {
+    if (ahora - reg.inicio >= VENTANA_MS) _rateLimitMap.delete(tel)
+  }
+}, VENTANA_MS)
+
 // Verificación del webhook
 router.get("/", (req, res) => {
   const mode = req.query["hub.mode"];
@@ -29,6 +55,11 @@ router.post("/", async (req, res) => {
       if (messages?.[0]) {
         const msg = messages[0];
         const telefono = msg.from;
+
+        if (excedeLimite(telefono)) {
+          console.warn(`⚠️ Rate limit alcanzado para ${telefono}`)
+          return res.sendStatus(200)
+        }
 
         let texto = ""
         if (msg.type === "interactive") {
