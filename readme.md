@@ -212,10 +212,6 @@ Usuario: pulsa "Confirmar"
 Sin límite, un usuario puede enviar miles de mensajes y saturar el bot o la API de WhatsApp.
 - Middleware simple con un `Map` en memoria: máx. 10 mensajes por número cada 60 segundos.
 
-#### Validar horas pasadas al reservar hoy
-Si el usuario reserva para el día de hoy, los slots generados pueden incluir horas que ya pasaron.
-- Filtrar en `obtenerHorasDisponibles` los slots anteriores a `Date.now()` cuando `fecha === hoy`.
-
 ---
 
 ### 🟠 Importante
