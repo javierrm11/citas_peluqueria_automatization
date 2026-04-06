@@ -235,15 +235,6 @@ Cuando un cliente confirma una cita, enviar un WhatsApp al barbero asignado.
 
 ### 🟡 Mejoras de UX
 
-#### Lista de horas en formato de franjas
-En vez de mostrar `1️⃣ 10:00 / 2️⃣ 10:30 / 3️⃣ 11:00...`, agrupar por mañana/tarde:
-```
-🌅 Mañana: 10:00 · 10:30 · 11:00
-🌇 Tarde:  16:00 · 16:30 · 17:00
-```
-
-#### Confirmación por plantilla de WhatsApp
-Usar `enviarPlantilla()` (ya implementada) para el recordatorio de confirmación — permite enviar el mensaje aunque el cliente no haya escrito en las últimas 24h.
 
 #### Mensaje de bienvenida diferente para clientes recurrentes
 Si el cliente ya tiene citas previas, personalizar el saludo:
