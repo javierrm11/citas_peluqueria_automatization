@@ -207,9 +207,6 @@ Usuario: pulsa "Confirmar"
 
 ### 🔴 Alta prioridad
 
-#### Cache de servicios con TTL
-La cache actual (`_serviciosCache`) nunca expira. Si el admin modifica servicios en el panel, el bot sigue sirviendo el catálogo antiguo hasta reinicio.
-- Añadir expiración de 10 minutos o llamar a `invalidarCacheServicios()` desde un endpoint interno que el admin active al guardar.
 
 #### Rate limiting por teléfono
 Sin límite, un usuario puede enviar miles de mensajes y saturar el bot o la API de WhatsApp.

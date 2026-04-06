@@ -221,7 +221,22 @@ async function obtenerHorasDisponibles(fecha, servicioId, barberoId) {
     }
   }
 
-  return todosLosSlots.filter(slot => !ocupados.has(slot))
+  const libres = todosLosSlots.filter(slot => !ocupados.has(slot))
+
+  // Si es hoy, descartar slots que ya han pasado (con 15 min de margen)
+  // Usamos hora de Madrid porque los slots del barbero están en esa zona horaria
+  const ahoraEspana = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Madrid' }))
+  const yy  = ahoraEspana.getFullYear()
+  const mm  = String(ahoraEspana.getMonth() + 1).padStart(2, '0')
+  const dd  = String(ahoraEspana.getDate()).padStart(2, '0')
+  const hoy = `${yy}-${mm}-${dd}`
+  if (fecha === hoy) {
+    const ahoraMin = ahoraEspana.getHours() * 60 + ahoraEspana.getMinutes()
+    const margen   = 15
+    return libres.filter(slot => horaAMinutos(slot) >= ahoraMin + margen)
+  }
+
+  return libres
 }
 
 module.exports = {
