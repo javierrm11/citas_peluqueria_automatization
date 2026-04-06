@@ -71,12 +71,12 @@ async function enviarRecordatorios() {
  *   "0 19 * * *"  → todos los días a las 19:00
  */
 function iniciarRecordatorios() {
-cron.schedule('0 9 * * *', async () => {
+cron.schedule('0 15 * * *', async () => {
     await enviarRecordatorios()
 }, {
     timezone: 'Europe/Madrid'
 })
-  console.log('[Recordatorios] Cron iniciado — recordatorios diarios a las 9:00 (Europe/Madrid)')
+  console.log('[Recordatorios] Cron iniciado — recordatorios diarios a las 15:00 (Europe/Madrid)')
 }
 
 module.exports = { iniciarRecordatorios }

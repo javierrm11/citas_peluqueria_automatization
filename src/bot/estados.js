@@ -429,9 +429,14 @@ async function procesarMensaje(telefono, texto) {
           })
         }
 
+        if (secciones.length === 0) {
+          await enviarMensaje(telefono, `No se encontraron horarios disponibles el ${fecha}. Elija otro día.`)
+          break
+        }
+
         await enviarLista(telefono, {
           cabecera: `${DIAS[new Date(fecha + 'T12:00:00').getDay()]} ${fecha}`,
-          cuerpo:   `Horarios disponibles con *${barberoNombre}*:`,
+          cuerpo:   `Horarios disponibles con ${barberoNombre}:`,
           pie:      'Escriba 0 para volver al menú',
           boton:    'Ver horarios',
           secciones,
@@ -533,7 +538,7 @@ async function procesarMensaje(telefono, texto) {
         }
         await enviarLista(telefono, {
           cabecera: `${DIAS[new Date(fecha + 'T12:00:00').getDay()]} ${fecha}`,
-          cuerpo:   `Horarios disponibles con *${barberoNombre}*:`,
+          cuerpo:   `Horarios disponibles con ${barberoNombre}:`,
           pie:      'Escriba 0 para volver al menú',
           boton:    'Ver horarios',
           secciones,
