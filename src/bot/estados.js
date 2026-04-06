@@ -51,6 +51,7 @@ async function enviarMenu(telefono) {
         { id: 'menu_1', titulo: 'Reservar cita',      descripcion: 'Elija servicio, profesional y horario' },
         { id: 'menu_2', titulo: 'Ver mis citas',       descripcion: 'Consulte sus próximas citas'           },
         { id: 'menu_3', titulo: 'Cancelar cita',       descripcion: 'Cancele una reserva existente'         },
+        { id: 'menu_5', titulo: 'Reprogramar cita',    descripcion: 'Cambie la fecha u hora de una cita'    },
         { id: 'menu_4', titulo: 'Hablar con soporte',  descripcion: 'Un agente le atenderá en breve'        },
         { id: 'menu_0', titulo: 'Salir',               descripcion: 'Cerrar la conversación'                },
       ],
@@ -102,6 +103,7 @@ async function procesarMensaje(telefono, texto) {
                : texto === 'menu_2' ? '2'
                : texto === 'menu_3' ? '3'
                : texto === 'menu_4' ? '4'
+               : texto === 'menu_5' ? '5'
                : texto
 
       if (op === '1') {
@@ -171,6 +173,30 @@ async function procesarMensaje(telefono, texto) {
           `Ha solicitado contactar con soporte.\n\nUn responsable le atenderá a la brevedad posible.\n\nEscriba su consulta a continuación:\n\n_Escriba 0 para volver al menú._`
         )
         await guardarSesion(telefono, 'SOPORTE', {})
+
+      } else if (op === '5') {
+        const citas = await obtenerCitasCliente(telefono)
+        if (citas.length === 0) {
+          await enviarMensaje(telefono, `No tiene citas próximas para reprogramar.`)
+          await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
+          await enviarMenu(telefono)
+        } else {
+          await enviarLista(telefono, {
+            cabecera: 'Reprogramar cita',
+            cuerpo:   '¿Qué cita desea reprogramar?',
+            pie:      'Escriba 0 para volver sin cambios',
+            boton:    'Ver mis citas',
+            secciones: [{
+              titulo: 'Citas confirmadas',
+              filas: citas.map((c, i) => ({
+                id:          `reprog_${i}`,
+                titulo:      `${c.fecha} · ${c.hora.substring(0, 5)}`,
+                descripcion: `${c.servicios.nombre} — ${c.barberos?.nombre || 'Sin asignar'}`,
+              })),
+            }],
+          })
+          await guardarSesion(telefono, 'REPROGRAMANDO_CITA', { citasPendientes: citas })
+        }
 
       } else {
         await enviarMensaje(telefono, `Por favor seleccione una opción del menú.`)
@@ -667,6 +693,81 @@ async function procesarMensaje(telefono, texto) {
           ],
           'Peluquería Javier'
         )
+      }
+      break
+    }
+
+    // ── Reprogramando cita ─────────────────────────────────────────────────────
+    case 'REPROGRAMANDO_CITA': {
+      const { citasPendientes } = datos
+
+      const idx = texto.startsWith('reprog_')
+        ? parseInt(texto.replace('reprog_', ''))
+        : parseInt(texto) - 1
+
+      if (idx >= 0 && idx < citasPendientes.length) {
+        const cita = citasPendientes[idx]
+
+        // Cancelar la cita actual
+        await cancelarCita(cita.id)
+        await enviarMensaje(
+          telefono,
+          `Cita del *${cita.fecha}* a las *${cita.hora.substring(0, 5)}* cancelada.\n\nAhora elija una nueva fecha y hora:`
+        )
+
+        // Saltar directamente a selección de fecha con el mismo servicio y barbero
+        const servicioId    = cita.servicios?.id || cita.servicio_id
+        const barberoId     = cita.barberos?.id  || cita.barbero_id
+        const servicio      = cita.servicios?.nombre  || ''
+        const barberoNombre = cita.barberos?.nombre   || 'Sin asignar'
+
+        const hoy = new Date()
+        const fechas = []
+        let i = 0
+        while (fechas.length < 4) {
+          const d = new Date(hoy)
+          d.setDate(hoy.getDate() + i)
+          if (d.getDay() !== 0) fechas.push(d.toISOString().split('T')[0])
+          i++
+        }
+
+        const disponibilidad = await Promise.all(
+          fechas.map(f => obtenerHorasDisponibles(f, servicioId, barberoId))
+        )
+
+        await enviarLista(telefono, {
+          cabecera: `${servicio} con ${barberoNombre}`,
+          cuerpo:   'Elija el nuevo día:',
+          pie:      'Escriba 0 para volver al menú',
+          boton:    'Ver días',
+          secciones: [{
+            titulo: 'Próximos 4 días',
+            filas: fechas.map((f, j) => {
+              const d = new Date(f + 'T12:00:00')
+              const n = disponibilidad[j].length
+              return {
+                id:          `fecha_${j}`,
+                titulo:      `${DIAS[d.getDay()]} ${f}`,
+                descripcion: n > 0
+                  ? `${n} horario${n > 1 ? 's' : ''} disponible${n > 1 ? 's' : ''}`
+                  : 'Sin citas disponibles',
+              }
+            }),
+          }],
+        })
+
+        await guardarSesion(telefono, 'ELIGIENDO_FECHA', {
+          servicio,
+          servicioId,
+          barberoId,
+          barberoNombre,
+          fechasDisponibles: fechas,
+          disponibilidad,
+          barberos: null,   // no hay lista de barberos (viene de reprogramación)
+        })
+
+      } else {
+        await enviarMensaje(telefono, `Por favor seleccione una cita de la lista.`)
       }
       break
     }

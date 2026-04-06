@@ -114,7 +114,7 @@ async function obtenerCitasCliente(telefono) {
 
   const { data } = await supabase
     .from('citas')
-    .select('id, fecha, hora, servicios(nombre, precio), barberos(nombre)')
+    .select('id, fecha, hora, servicio_id, barbero_id, servicios(id, nombre, precio), barberos(id, nombre)')
     .eq('cliente_id', cliente.id)
     .eq('estado', 'confirmada')
     .gte('fecha', hoy)
