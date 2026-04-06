@@ -76,6 +76,23 @@ async function obtenerOCrearCliente(telefono) {
   return nuevo
 }
 
+async function obtenerNombreCliente(telefono) {
+  const { data } = await supabase
+    .from('clientes')
+    .select('nombre')
+    .eq('telefono', telefono)
+    .single()
+  return data?.nombre || null
+}
+
+async function actualizarNombreCliente(telefono, nombre) {
+  await obtenerOCrearCliente(telefono)   // garantiza que el cliente existe
+  await supabase
+    .from('clientes')
+    .update({ nombre })
+    .eq('telefono', telefono)
+}
+
 // ─── Guardar cita ─────────────────────────────────────────────────────────────
 
 async function guardarCita(telefono, servicioId, barberoId, fecha, hora) {
@@ -247,4 +264,6 @@ module.exports = {
   obtenerCitasCliente,
   cancelarCita,
   obtenerHorasDisponibles,
+  obtenerNombreCliente,
+  actualizarNombreCliente,
 }

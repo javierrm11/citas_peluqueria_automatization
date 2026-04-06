@@ -6,6 +6,8 @@ const {
   obtenerCitasCliente,
   cancelarCita,
   obtenerHorasDisponibles,
+  obtenerNombreCliente,
+  actualizarNombreCliente,
 } = require('../services/citas')
 const supabase = require('../database/db')
 
@@ -39,10 +41,11 @@ async function eliminarSesion(telefono) {
 
 // ─── Menú principal como lista interactiva ────────────────────────────────────
 
-async function enviarMenu(telefono) {
+async function enviarMenu(telefono, nombre = null) {
+  const saludo = nombre ? `Hola, ${nombre}. ¿En qué podemos ayudarle?` : '¿En qué podemos ayudarle hoy?'
   await enviarLista(telefono, {
     cabecera: 'Peluquería Javier',
-    cuerpo:   '¿En qué podemos ayudarle hoy?',
+    cuerpo:   saludo,
     pie:      'Escriba 0 en cualquier momento para salir',
     boton:    'Ver opciones',
     secciones: [{
@@ -74,14 +77,18 @@ async function procesarMensaje(telefono, texto) {
     datos  = {}
   }
 
+  // Nombre del cliente (null si aún no lo ha proporcionado)
+  const nombreCliente = await obtenerNombreCliente(telefono)
+
   // Escape global: "0" o "menu_0" vuelve al menú (o cierra si ya está en él)
   if (texto === '0' || texto === 'menu_0') {
     if (estado === 'ESPERANDO_OPCION' || estado === 'INICIO') {
-      await enviarMensaje(telefono, `Hasta pronto. Si necesita algo, escríbanos cuando quiera.`)
+      const despedida = nombreCliente ? `Hasta pronto, ${nombreCliente}.` : `Hasta pronto. Si necesita algo, escríbanos cuando quiera.`
+      await enviarMensaje(telefono, despedida)
       await eliminarSesion(telefono)
     } else {
       await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-      await enviarMenu(telefono)
+      await enviarMenu(telefono, nombreCliente)
     }
     return
   }
@@ -90,8 +97,27 @@ async function procesarMensaje(telefono, texto) {
 
     // ── Bienvenida ─────────────────────────────────────────────────────────────
     case 'INICIO': {
-      await enviarMensaje(telefono, `Bienvenido a *Peluquería Javier*.`)
-      await enviarMenu(telefono)
+      if (!nombreCliente) {
+        await enviarMensaje(telefono, `Bienvenido a *Peluquería Javier*.\n\n¿Cómo se llama? Así podremos atenderle mejor.`)
+        await guardarSesion(telefono, 'PIDIENDO_NOMBRE', {})
+      } else {
+        await enviarMensaje(telefono, `Bienvenido de nuevo, *${nombreCliente}*.`)
+        await enviarMenu(telefono, nombreCliente)
+        await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
+      }
+      break
+    }
+
+    // ── Pedir nombre (primer contacto) ─────────────────────────────────────────
+    case 'PIDIENDO_NOMBRE': {
+      const nombre = texto.trim()
+      if (!nombre || nombre.length < 2 || nombre.length > 50) {
+        await enviarMensaje(telefono, `Por favor indique su nombre para continuar.`)
+        break
+      }
+      await actualizarNombreCliente(telefono, nombre)
+      await enviarMensaje(telefono, `Encantados, *${nombre}*.`)
+      await enviarMenu(telefono, nombre)
       await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
       break
     }
@@ -141,14 +167,14 @@ async function procesarMensaje(telefono, texto) {
           await enviarMensaje(telefono, msg.trimEnd())
         }
         await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-        await enviarMenu(telefono)
+        await enviarMenu(telefono, nombreCliente)
 
       } else if (op === '3') {
         const citas = await obtenerCitasCliente(telefono)
         if (citas.length === 0) {
           await enviarMensaje(telefono, `No tiene citas pendientes para cancelar.`)
           await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-          await enviarMenu(telefono)
+          await enviarMenu(telefono, nombreCliente)
         } else {
           await enviarLista(telefono, {
             cabecera: 'Cancelar cita',
@@ -179,7 +205,7 @@ async function procesarMensaje(telefono, texto) {
         if (citas.length === 0) {
           await enviarMensaje(telefono, `No tiene citas próximas para reprogramar.`)
           await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-          await enviarMenu(telefono)
+          await enviarMenu(telefono, nombreCliente)
         } else {
           await enviarLista(telefono, {
             cabecera: 'Reprogramar cita',
@@ -200,7 +226,7 @@ async function procesarMensaje(telefono, texto) {
 
       } else {
         await enviarMensaje(telefono, `Por favor seleccione una opción del menú.`)
-        await enviarMenu(telefono)
+        await enviarMenu(telefono, nombreCliente)
       }
       break
     }
@@ -212,7 +238,7 @@ async function procesarMensaje(telefono, texto) {
         `Su mensaje ha sido recibido. En breve nos ponemos en contacto con usted.`
       )
       await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-      await enviarMenu(telefono)
+      await enviarMenu(telefono, nombreCliente)
       break
     }
 
@@ -234,7 +260,7 @@ async function procesarMensaje(telefono, texto) {
             `En este momento no hay profesionales disponibles para *${servicio}*.`
           )
           await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-          await enviarMenu(telefono)
+          await enviarMenu(telefono, nombreCliente)
           break
         }
 
@@ -606,12 +632,12 @@ async function procesarMensaje(telefono, texto) {
           )
         }
         await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-        await enviarMenu(telefono)
+        await enviarMenu(telefono, nombreCliente)
 
       } else if (texto === 'cancelar_cita') {
         await enviarMensaje(telefono, `La cita no ha sido guardada. Puede iniciar el proceso de reserva cuando lo desee.`)
         await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-        await enviarMenu(telefono)
+        await enviarMenu(telefono, nombreCliente)
 
       } else {
         await enviarBotones(
@@ -674,12 +700,12 @@ async function procesarMensaje(telefono, texto) {
           `Profesional: ${citaACancelar.barberos?.nombre || 'Sin asignar'}`
         )
         await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-        await enviarMenu(telefono)
+        await enviarMenu(telefono, nombreCliente)
 
       } else if (texto === 'rechazar_cancelacion') {
         await enviarMensaje(telefono, `La cita se ha mantenido. No se ha realizado ningún cambio.`)
         await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-        await enviarMenu(telefono)
+        await enviarMenu(telefono, nombreCliente)
 
       } else {
         await enviarBotones(

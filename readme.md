@@ -207,11 +207,6 @@ Usuario: pulsa "Confirmar"
 
 ### 🔴 Alta prioridad
 
-
-#### Rate limiting por teléfono
-Sin límite, un usuario puede enviar miles de mensajes y saturar el bot o la API de WhatsApp.
-- Middleware simple con un `Map` en memoria: máx. 10 mensajes por número cada 60 segundos.
-
 ---
 
 ### 🟠 Importante
