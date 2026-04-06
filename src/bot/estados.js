@@ -274,7 +274,7 @@ async function procesarMensaje(telefono, texto) {
           pie:      'Escriba 0 para volver al menú',
           boton:    'Ver días',
           secciones: [{
-            titulo: 'Próximos días disponibles',
+            titulo: 'Próximos 4 días',
             filas: fechas.map((f, j) => {
               const d        = new Date(f + 'T12:00:00')
               const n        = disponibilidad[j].length
@@ -346,7 +346,7 @@ async function procesarMensaje(telefono, texto) {
             pie:      'Escriba 0 para volver al menú',
             boton:    'Ver días',
             secciones: [{
-              titulo: 'Próximos días disponibles',
+              titulo: 'Próximos 4 días',
               filas: fechas.map((f, j) => {
                 const d = new Date(f + 'T12:00:00')
                 const n = disp[j].length
@@ -393,7 +393,7 @@ async function procesarMensaje(telefono, texto) {
             pie:      'Escriba 0 para volver al menú',
             boton:    'Ver días',
             secciones: [{
-              titulo: 'Próximos días disponibles',
+              titulo: 'Próximos 4 días',
               filas: fechasDisponibles.map((f, j) => {
                 const d = new Date(f + 'T12:00:00')
                 const n = disponibilidad[j]?.length ?? 0
@@ -458,7 +458,7 @@ async function procesarMensaje(telefono, texto) {
           pie:      'Escriba 0 para volver al menú',
           boton:    'Ver días',
           secciones: [{
-            titulo: 'Próximos días disponibles',
+            titulo: 'Próximos 4 días',
             filas: fechasDisponibles.map((f, j) => {
               const d        = new Date(f + 'T12:00:00')
               const n        = disponibilidad[j]?.length ?? 0
