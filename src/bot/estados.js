@@ -284,7 +284,7 @@ async function procesarMensaje(telefono, texto) {
         const SERVICIOS2 = await obtenerServicios()
         await enviarLista(telefono, {
           cabecera: 'Servicios disponibles',
-          cuerpo:   '¿Qué servicio necesita hoy?',
+          cuerpo:   '¿Qué servicio necesita hoy ?',
           pie:      'Escriba 0 para volver al menú',
           boton:    'Ver servicios',
           secciones: [{
