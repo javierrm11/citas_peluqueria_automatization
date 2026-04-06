@@ -32,7 +32,7 @@ async function enviarMensaje(telefono, texto) {
       },
       { headers }
     )
-    console.log(`✅ Mensaje enviado a ${telefono}`)
+    console.log(`Mensaje enviado a ${telefono}`)
   } catch (error) {
     console.error('❌ Error enviando mensaje:', error.response?.data)
   }
