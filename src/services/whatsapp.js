@@ -103,7 +103,6 @@ async function enviarLista(telefono, { cabecera, cuerpo, pie, boton, secciones }
       },
     },
   }
-  console.log('[enviarLista] payload:', JSON.stringify(payload, null, 2))
   try {
     await axios.post(`${BASE_URL}/${process.env.PHONE_NUMBER_ID}/messages`, payload, { headers })
     console.log(`✅ Lista enviada a ${telefono}`)
