@@ -60,9 +60,18 @@ async function enviarMenu(telefono) {
 
 // ─── Procesador principal ─────────────────────────────────────────────────────
 
+const SALUDO_RE = /^(hola|buenas|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches|hey|hi|saludos|qu[eé]\s+tal|good\s+morning|good\s+afternoon)/i
+
 async function procesarMensaje(telefono, texto) {
   let { estado, datos } = await obtenerSesion(telefono)
   texto = texto.trim()
+
+  // Si el usuario saluda, reiniciar sesión siempre desde el principio
+  if (SALUDO_RE.test(texto)) {
+    await eliminarSesion(telefono)
+    estado = 'INICIO'
+    datos  = {}
+  }
 
   // Escape global: "0" o "menu_0" vuelve al menú (o cierra si ya está en él)
   if (texto === '0' || texto === 'menu_0') {

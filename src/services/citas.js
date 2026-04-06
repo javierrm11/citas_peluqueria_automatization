@@ -4,7 +4,7 @@ const supabase = require('../database/db')
 
 let _serviciosCache    = null
 let _serviciosCacheExp = 0
-const CACHE_TTL_MS     = 1 * 60 * 1000   // 1 mi
+const CACHE_TTL_MS     = 10 * 60 * 1000   // 10 minutos
 
 async function obtenerServicios() {
   if (_serviciosCache && Date.now() < _serviciosCacheExp) return _serviciosCache
