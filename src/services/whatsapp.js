@@ -81,33 +81,31 @@ async function enviarPlantilla(telefono, plantilla = 'hello_world', idioma = 'en
 // Lista interactiva (menús de opciones)
 // secciones: [{ titulo, filas: [{ id, titulo, descripcion? }] }]
 async function enviarLista(telefono, { cabecera, cuerpo, pie, boton, secciones }) {
-  try {
-    await axios.post(
-      `${BASE_URL}/${process.env.PHONE_NUMBER_ID}/messages`,
-      {
-        messaging_product: 'whatsapp',
-        to: telefono,
-        type: 'interactive',
-        interactive: {
-          type: 'list',
-          ...(cabecera && { header: { type: 'text', text: cabecera } }),
-          body: { text: cuerpo },
-          ...(pie && { footer: { text: pie } }),
-          action: {
-            button: boton,
-            sections: secciones.map(s => ({
-              title: s.titulo,
-              rows: s.filas.map(f => ({
-                id:    f.id,
-                title: f.titulo,
-                ...(f.descripcion && { description: f.descripcion }),
-              })),
-            })),
-          },
-        },
+  const payload = {
+    messaging_product: 'whatsapp',
+    to: telefono,
+    type: 'interactive',
+    interactive: {
+      type: 'list',
+      ...(cabecera && { header: { type: 'text', text: cabecera } }),
+      body: { text: cuerpo },
+      ...(pie && { footer: { text: pie } }),
+      action: {
+        button: boton,
+        sections: secciones.map(s => ({
+          title: s.titulo,
+          rows: s.filas.map(f => ({
+            id:    f.id,
+            title: f.titulo,
+            ...(f.descripcion && { description: f.descripcion }),
+          })),
+        })),
       },
-      { headers }
-    )
+    },
+  }
+  console.log('[enviarLista] payload:', JSON.stringify(payload, null, 2))
+  try {
+    await axios.post(`${BASE_URL}/${process.env.PHONE_NUMBER_ID}/messages`, payload, { headers })
     console.log(`✅ Lista enviada a ${telefono}`)
   } catch (error) {
     console.error('❌ Error enviando lista:', error.response?.data)
