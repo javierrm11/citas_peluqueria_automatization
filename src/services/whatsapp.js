@@ -7,6 +7,18 @@ const headers = {
   'Content-Type': 'application/json'
 }
 
+function normalizarTexto(valor) {
+  return String(valor ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function limitarTexto(valor, max) {
+  const texto = normalizarTexto(valor)
+  if (texto.length <= max) return texto
+  return `${texto.slice(0, Math.max(0, max - 1)).trimEnd()}…`
+}
+
 // Para RESPONDER mensajes del cliente (texto libre)
 async function enviarMensaje(telefono, texto) {
   try {
@@ -81,25 +93,31 @@ async function enviarPlantilla(telefono, plantilla = 'hello_world', idioma = 'en
 // Lista interactiva (menús de opciones)
 // secciones: [{ titulo, filas: [{ id, titulo, descripcion? }] }]
 async function enviarLista(telefono, { cabecera, cuerpo, pie, boton, secciones }) {
+  const seccionesSeguras = (secciones || [])
+    .map(s => ({
+      title: limitarTexto(s.titulo, 24),
+      rows: (s.filas || [])
+        .filter(f => f && f.id && f.titulo)
+        .map(f => ({
+          id: limitarTexto(f.id, 200),
+          title: limitarTexto(f.titulo, 24),
+          ...(f.descripcion && { description: limitarTexto(f.descripcion, 72) }),
+        })),
+    }))
+    .filter(s => s.title && s.rows.length > 0)
+
   const payload = {
     messaging_product: 'whatsapp',
     to: telefono,
     type: 'interactive',
     interactive: {
       type: 'list',
-      ...(cabecera && { header: { type: 'text', text: cabecera } }),
-      body: { text: cuerpo },
-      ...(pie && { footer: { text: pie } }),
+      ...(cabecera && { header: { type: 'text', text: limitarTexto(cabecera, 60) } }),
+      body: { text: limitarTexto(cuerpo, 1024) },
+      ...(pie && { footer: { text: limitarTexto(pie, 60) } }),
       action: {
-        button: boton,
-        sections: secciones.map(s => ({
-          title: s.titulo,
-          rows: s.filas.map(f => ({
-            id:    f.id,
-            title: f.titulo,
-            ...(f.descripcion && { description: f.descripcion }),
-          })),
-        })),
+        button: limitarTexto(boton, 20),
+        sections: seccionesSeguras,
       },
     },
   }
