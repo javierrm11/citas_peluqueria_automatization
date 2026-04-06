@@ -1,4 +1,4 @@
-const { enviarMensaje, enviarBotones } = require('../services/whatsapp.js')
+const { enviarMensaje, enviarBotones, enviarLista } = require('../services/whatsapp.js')
 const {
   obtenerServicios,
   obtenerBarberosPorServicio,
@@ -9,7 +9,7 @@ const {
 } = require('../services/citas')
 const supabase = require('../database/db')
 
-const MENU = `─────────────────\n¿Qué deseas hacer ahora?\n\n1. Reservar cita\n2. Ver mis citas\n3. Cancelar cita\n4. Hablar con soporte\n0. Salir`
+const DIAS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 
 // ─── Helpers de sesión ────────────────────────────────────────────────────────
 
@@ -37,250 +37,401 @@ async function eliminarSesion(telefono) {
   await supabase.from('sesiones').delete().eq('telefono', telefono)
 }
 
+// ─── Menú principal como lista interactiva ────────────────────────────────────
+
+async function enviarMenu(telefono) {
+  await enviarLista(telefono, {
+    cabecera: 'Peluquería Javier',
+    cuerpo:   '¿En qué podemos ayudarle hoy?',
+    pie:      'Escriba 0 en cualquier momento para salir',
+    boton:    'Ver opciones',
+    secciones: [{
+      titulo: 'Gestione su cita',
+      filas: [
+        { id: 'menu_1', titulo: 'Reservar cita',      descripcion: 'Elija servicio, profesional y horario' },
+        { id: 'menu_2', titulo: 'Ver mis citas',       descripcion: 'Consulte sus próximas citas'           },
+        { id: 'menu_3', titulo: 'Cancelar cita',       descripcion: 'Cancele una reserva existente'         },
+        { id: 'menu_4', titulo: 'Hablar con soporte',  descripcion: 'Un agente le atenderá en breve'        },
+        { id: 'menu_0', titulo: 'Salir',               descripcion: 'Cerrar la conversación'                },
+      ],
+    }],
+  })
+}
+
 // ─── Procesador principal ─────────────────────────────────────────────────────
 
 async function procesarMensaje(telefono, texto) {
   let { estado, datos } = await obtenerSesion(telefono)
   texto = texto.trim()
 
-  if (texto === '0') {
+  // Escape global: "0" o "menu_0" vuelve al menú (o cierra si ya está en él)
+  if (texto === '0' || texto === 'menu_0') {
     if (estado === 'ESPERANDO_OPCION' || estado === 'INICIO') {
       await enviarMensaje(telefono, `Hasta pronto. Si necesita algo, escríbanos cuando quiera.`)
       await eliminarSesion(telefono)
     } else {
       await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-      await enviarMensaje(telefono, MENU)
+      await enviarMenu(telefono)
     }
     return
   }
 
   switch (estado) {
 
+    // ── Bienvenida ─────────────────────────────────────────────────────────────
     case 'INICIO': {
-      await enviarMensaje(
-        telefono,
-        `Bienvenido a *Peluquería Javier*.\n\n` +
-        `¿En qué podemos ayudarle?\n\n` +
-        `1. Reservar cita\n` +
-        `2. Ver mis citas\n` +
-        `3. Cancelar cita\n` +
-        `4. Hablar con soporte\n` +
-        `0. Salir`
-      )
+      await enviarMensaje(telefono, `Bienvenido a *Peluquería Javier*.`)
+      await enviarMenu(telefono)
       await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
       break
     }
 
+    // ── Menú principal ─────────────────────────────────────────────────────────
     case 'ESPERANDO_OPCION': {
-      if (texto === '1') {
+      // Admite tanto el ID de la lista (menu_1) como texto numérico (1)
+      const op = texto === 'menu_1' ? '1'
+               : texto === 'menu_2' ? '2'
+               : texto === 'menu_3' ? '3'
+               : texto === 'menu_4' ? '4'
+               : texto
+
+      if (op === '1') {
         const SERVICIOS = await obtenerServicios()
-        const total     = Object.keys(SERVICIOS).length
 
-        let msg = `Seleccione el servicio que desea:\n\n`
-        for (const [key, s] of Object.entries(SERVICIOS)) {
-          msg += `${key}. ${s.nombre} - ${s.precio}\n`
-        }
-        msg += `0. Volver al menú`
+        await enviarLista(telefono, {
+          cabecera: 'Servicios disponibles',
+          cuerpo:   '¿Qué servicio necesita hoy?',
+          pie:      'Escriba 0 para volver al menú',
+          boton:    'Ver servicios',
+          secciones: [{
+            titulo: 'Nuestros servicios',
+            filas: Object.entries(SERVICIOS).map(([key, s]) => ({
+              id:          `servicio_${key}`,
+              titulo:      s.nombre,
+              descripcion: `${s.precio} · ${s.duracion_minutos} min`,
+            })),
+          }],
+        })
+        await guardarSesion(telefono, 'ELIGIENDO_SERVICIO', {
+          totalServicios: Object.keys(SERVICIOS).length,
+        })
 
-        await enviarMensaje(telefono, msg)
-        await guardarSesion(telefono, 'ELIGIENDO_SERVICIO', { totalServicios: total })
-
-      } else if (texto === '2') {
+      } else if (op === '2') {
         const citas = await obtenerCitasCliente(telefono)
         if (citas.length === 0) {
-          await enviarMensaje(telefono, `No tiene citas próximas registradas.\n\n${MENU}`)
+          await enviarMensaje(telefono, `No tiene citas próximas registradas.`)
         } else {
           let msg = '*Sus próximas citas:*\n\n'
           citas.forEach((c, i) => {
-            msg += `${i + 1}. ${c.fecha} a las ${c.hora.substring(0, 5)}\n`
-            msg += `   Servicio: ${c.servicios.nombre} - ${c.servicios.precio}€\n`
+            msg += `*${i + 1}.* ${c.fecha} a las ${c.hora.substring(0, 5)}\n`
+            msg += `   Servicio: ${c.servicios.nombre} — ${c.servicios.precio}€\n`
             msg += `   Profesional: ${c.barberos?.nombre || 'Sin asignar'}\n\n`
           })
-          msg += MENU
-          await enviarMensaje(telefono, msg)
+          await enviarMensaje(telefono, msg.trimEnd())
         }
         await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
+        await enviarMenu(telefono)
 
-      } else if (texto === '3') {
+      } else if (op === '3') {
         const citas = await obtenerCitasCliente(telefono)
         if (citas.length === 0) {
-          await enviarMensaje(telefono, `No tiene citas pendientes para cancelar.\n\n${MENU}`)
+          await enviarMensaje(telefono, `No tiene citas pendientes para cancelar.`)
           await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
+          await enviarMenu(telefono)
         } else {
-          let msg = '¿Qué cita desea cancelar?\n\n'
-          citas.forEach((c, i) => {
-            msg += `${i + 1}. ${c.fecha} a las ${c.hora.substring(0, 5)}\n`
-            msg += `   ${c.servicios.nombre} - ${c.barberos?.nombre || 'Sin asignar'}\n`
+          await enviarLista(telefono, {
+            cabecera: 'Cancelar cita',
+            cuerpo:   '¿Qué cita desea cancelar?',
+            pie:      'Escriba 0 para volver sin cancelar',
+            boton:    'Ver mis citas',
+            secciones: [{
+              titulo: 'Citas confirmadas',
+              filas: citas.map((c, i) => ({
+                id:          `cancelar_${i}`,
+                titulo:      `${c.fecha} · ${c.hora.substring(0, 5)}`,
+                descripcion: `${c.servicios.nombre} — ${c.barberos?.nombre || 'Sin asignar'}`,
+              })),
+            }],
           })
-          msg += `\n0. Volver al menú`
-          await enviarMensaje(telefono, msg)
           await guardarSesion(telefono, 'CANCELANDO_CITA', { citasPendientes: citas })
         }
 
-      } else if (texto === '4') {
+      } else if (op === '4') {
         await enviarMensaje(
           telefono,
-          `Ha solicitado contactar con soporte.\n\n` +
-          `Un responsable le atenderá a la brevedad posible.\n\n` +
-          `Escriba su consulta a continuación:\n\n` +
-          `0. Volver al menú`
+          `Ha solicitado contactar con soporte.\n\nUn responsable le atenderá a la brevedad posible.\n\nEscriba su consulta a continuación:\n\n_Escriba 0 para volver al menú._`
         )
         await guardarSesion(telefono, 'SOPORTE', {})
 
       } else {
-        await enviarMensaje(
-          telefono,
-          `Opción no válida. Por favor elija una de las siguientes:\n\n` +
-          `1. Reservar cita\n2. Ver mis citas\n3. Cancelar cita\n4. Hablar con soporte\n0. Salir`
-        )
+        await enviarMensaje(telefono, `Por favor seleccione una opción del menú.`)
+        await enviarMenu(telefono)
       }
       break
     }
 
+    // ── Soporte ────────────────────────────────────────────────────────────────
     case 'SOPORTE': {
       await enviarMensaje(
         telefono,
-        `Su mensaje ha sido recibido. En breve nos ponemos en contacto con usted.\n\n${MENU}`
+        `Su mensaje ha sido recibido. En breve nos ponemos en contacto con usted.`
       )
       await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
+      await enviarMenu(telefono)
       break
     }
 
+    // ── Eligiendo servicio ─────────────────────────────────────────────────────
     case 'ELIGIENDO_SERVICIO': {
-      const SERVICIOS          = await obtenerServicios()
-      const { totalServicios } = datos
+      const SERVICIOS = await obtenerServicios()
 
-      if (SERVICIOS[texto]) {
-        const servicio   = SERVICIOS[texto].nombre
-        const servicioId = SERVICIOS[texto].id
+      // Extrae la clave: "servicio_1" → "1"  |  "1" → "1"
+      const clave = texto.startsWith('servicio_') ? texto.replace('servicio_', '') : texto
 
-        const barberos = await obtenerBarberosPorServicio(servicioId)
+      if (SERVICIOS[clave]) {
+        const servicio   = SERVICIOS[clave].nombre
+        const servicioId = SERVICIOS[clave].id
+        const barberos   = await obtenerBarberosPorServicio(servicioId)
 
         if (barberos.length === 0) {
           await enviarMensaje(
             telefono,
-            `En este momento no hay profesionales disponibles para *${servicio}*.\n\n${MENU}`
+            `En este momento no hay profesionales disponibles para *${servicio}*.`
           )
           await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
+          await enviarMenu(telefono)
           break
         }
 
-        let msg = `¿Con qué profesional desea su *${servicio}*?\n\n`
-        barberos.forEach((b, idx) => {
-          msg += `${idx + 1}. ${b.nombre}\n`
+        await enviarLista(telefono, {
+          cabecera: servicio,
+          cuerpo:   '¿Con qué profesional desea su cita?',
+          pie:      'Escriba 0 para volver al menú',
+          boton:    'Ver profesionales',
+          secciones: [{
+            titulo: 'Nuestro equipo',
+            filas: barberos.map((b, idx) => ({
+              id:    `barbero_${idx}`,
+              titulo: b.nombre,
+            })),
+          }],
         })
-        msg += `\n0. Volver al menú`
+        await guardarSesion(telefono, 'ELIGIENDO_BARBERO', { servicio, servicioId, barberos })
 
-        await enviarMensaje(telefono, msg)
-        await guardarSesion(telefono, 'ELIGIENDO_BARBERO', {
-          servicio,
-          servicioId,
-          barberos
-        })
       } else {
-        await enviarMensaje(
-          telefono,
-          `Opción no válida. Elija un número del 1 al ${totalServicios}\n\n0. Volver al menú`
-        )
+        await enviarMensaje(telefono, `Por favor seleccione un servicio del menú.`)
+        const SERVICIOS2 = await obtenerServicios()
+        await enviarLista(telefono, {
+          cabecera: 'Servicios disponibles',
+          cuerpo:   '¿Qué servicio necesita hoy?',
+          pie:      'Escriba 0 para volver al menú',
+          boton:    'Ver servicios',
+          secciones: [{
+            titulo: 'Nuestros servicios',
+            filas: Object.entries(SERVICIOS2).map(([key, s]) => ({
+              id:          `servicio_${key}`,
+              titulo:      s.nombre,
+              descripcion: `${s.precio} · ${s.duracion_minutos} min`,
+            })),
+          }],
+        })
       }
       break
     }
 
+    // ── Eligiendo barbero ──────────────────────────────────────────────────────
     case 'ELIGIENDO_BARBERO': {
       const { servicio, servicioId, barberos } = datos
-      const opcionBarbero = parseInt(texto)
 
-      if (opcionBarbero >= 1 && opcionBarbero <= barberos.length) {
-        const barbero   = barberos[opcionBarbero - 1]
+      // Extrae el índice: "barbero_0" → 0  |  "1" → índice 0
+      const idx = texto.startsWith('barbero_')
+        ? parseInt(texto.replace('barbero_', ''))
+        : parseInt(texto) - 1
+
+      if (idx >= 0 && idx < barberos.length) {
+        const barbero   = barberos[idx]
         const barberoId = barbero.id
 
-        // Generar próximos 4 días sin domingo
-        const hoy    = new Date()
+        // Próximos 4 días hábiles (sin domingo)
+        const hoy = new Date()
         const fechas = []
-        let contador = 0
-        let i        = 1
-
-        while (contador < 4) {
-          const fecha = new Date(hoy)
-          fecha.setDate(hoy.getDate() + i)
-          if (fecha.getDay() !== 0) {
-            fechas.push(fecha.toISOString().split('T')[0])
-            contador++
-          }
+        let i = 1
+        while (fechas.length < 4) {
+          const d = new Date(hoy)
+          d.setDate(hoy.getDate() + i)
+          if (d.getDay() !== 0) fechas.push(d.toISOString().split('T')[0])
           i++
         }
 
-        // Comprobar disponibilidad de cada fecha
+        // Disponibilidad en paralelo
         const disponibilidad = await Promise.all(
           fechas.map(f => obtenerHorasDisponibles(f, servicioId, barberoId))
         )
 
-        const dias = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
-        let msg = `Seleccione un día para su *${servicio}* con *${barbero.nombre}*:\n\n`
-        fechas.forEach((f, idx) => {
-          const d      = new Date(f + 'T12:00:00')
-          const sinCitas = disponibilidad[idx].length === 0 ? '   (sin citas disp.)' : ''
-          msg += `${idx + 1}. ${dias[d.getDay()]} ${f}${sinCitas}\n`
+        await enviarLista(telefono, {
+          cabecera: `${servicio} con ${barbero.nombre}`,
+          cuerpo:   'Elija el día que prefiera:',
+          pie:      'Escriba 0 para volver al menú',
+          boton:    'Ver días',
+          secciones: [{
+            titulo: 'Próximos días disponibles',
+            filas: fechas.map((f, j) => {
+              const d        = new Date(f + 'T12:00:00')
+              const n        = disponibilidad[j].length
+              const hayHoras = n > 0
+              return {
+                id:          `fecha_${j}`,
+                titulo:      `${DIAS[d.getDay()]} ${f}`,
+                descripcion: hayHoras
+                  ? `${n} horario${n > 1 ? 's' : ''} disponible${n > 1 ? 's' : ''}`
+                  : 'Sin citas disponibles',
+              }
+            }),
+          }],
         })
-        msg += `\n0. Volver al menú`
 
-        await enviarMensaje(telefono, msg)
         await guardarSesion(telefono, 'ELIGIENDO_FECHA', {
           servicio,
           servicioId,
           barberoId,
           barberoNombre: barbero.nombre,
-          fechasDisponibles: fechas
+          fechasDisponibles: fechas,
+          disponibilidad,
         })
+
       } else {
-        await enviarMensaje(
-          telefono,
-          `Opción no válida. Elija un número del 1 al ${barberos.length}\n\n0. Volver al menú`
-        )
+        await enviarMensaje(telefono, `Por favor seleccione un profesional del menú.`)
+        await enviarLista(telefono, {
+          cabecera: servicio,
+          cuerpo:   '¿Con qué profesional desea su cita?',
+          pie:      'Escriba 0 para volver al menú',
+          boton:    'Ver profesionales',
+          secciones: [{
+            titulo: 'Nuestro equipo',
+            filas: barberos.map((b, j) => ({
+              id:    `barbero_${j}`,
+              titulo: b.nombre,
+            })),
+          }],
+        })
       }
       break
     }
 
+    // ── Eligiendo fecha ────────────────────────────────────────────────────────
     case 'ELIGIENDO_FECHA': {
-      const opcionFecha = parseInt(texto)
-      const { fechasDisponibles, servicio, servicioId, barberoId, barberoNombre } = datos
+      const { servicio, servicioId, barberoId, barberoNombre, fechasDisponibles, disponibilidad } = datos
 
-      if (opcionFecha >= 1 && opcionFecha <= fechasDisponibles.length) {
-        const fecha       = fechasDisponibles[opcionFecha - 1]
+      // Extrae el índice: "fecha_2" → 2  |  "1" → índice 0
+      const idx = texto.startsWith('fecha_')
+        ? parseInt(texto.replace('fecha_', ''))
+        : parseInt(texto) - 1
+
+      if (idx >= 0 && idx < fechasDisponibles.length) {
+        const fecha = fechasDisponibles[idx]
+
+        // Re-consulta horas en el momento de la selección (por si hubo cambios)
         const horasLibres = await obtenerHorasDisponibles(fecha, servicioId, barberoId)
 
         if (horasLibres.length === 0) {
-          await enviarMensaje(
-            telefono,
-            `*${barberoNombre}* no tiene horas disponibles el ${fecha}.\n\nPor favor elija otro día:\n\n0. Volver al menú`
-          )
-        } else {
-          let msg = `Horas disponibles con *${barberoNombre}* el *${fecha}*:\n\n`
-          horasLibres.forEach((h, idx) => {
-            msg += `${idx + 1}. ${h}\n`
+          await enviarMensaje(telefono, `*${barberoNombre}* ya no tiene horarios disponibles el *${fecha}*.\n\nElija otro día:`)
+          await enviarLista(telefono, {
+            cabecera: `${servicio} con ${barberoNombre}`,
+            cuerpo:   'Elija otro día:',
+            pie:      'Escriba 0 para volver al menú',
+            boton:    'Ver días',
+            secciones: [{
+              titulo: 'Próximos días disponibles',
+              filas: fechasDisponibles.map((f, j) => {
+                const d = new Date(f + 'T12:00:00')
+                const n = disponibilidad[j]?.length ?? 0
+                return {
+                  id:          `fecha_${j}`,
+                  titulo:      `${DIAS[d.getDay()]} ${f}`,
+                  descripcion: n > 0
+                    ? `${n} horario${n > 1 ? 's' : ''} disponible${n > 1 ? 's' : ''}`
+                    : 'Sin citas disponibles',
+                }
+              }),
+            }],
           })
-          msg += `\n0. Volver al menú`
-          await enviarMensaje(telefono, msg)
-          await guardarSesion(telefono, 'ELIGIENDO_HORA', {
-            servicio, servicioId, barberoId, barberoNombre, fecha,
-            horasDisponibles: horasLibres
+          break
+        }
+
+        // Agrupar en Mañana / Tarde (máx 10 por sección)
+        const manana = horasLibres.filter(h => parseInt(h.split(':')[0]) < 14).slice(0, 10)
+        const tarde  = horasLibres.filter(h => parseInt(h.split(':')[0]) >= 14).slice(0, 10)
+        const horasEnLista = [...manana, ...tarde]
+
+        const secciones = []
+        if (manana.length > 0) {
+          secciones.push({
+            titulo: 'Mañana',
+            filas: manana.map((h, j) => ({ id: `hora_${j}`, titulo: h })),
           })
         }
+        if (tarde.length > 0) {
+          secciones.push({
+            titulo: 'Tarde',
+            filas: tarde.map((h, j) => ({ id: `hora_${manana.length + j}`, titulo: h })),
+          })
+        }
+
+        await enviarLista(telefono, {
+          cabecera: `${DIAS[new Date(fecha + 'T12:00:00').getDay()]} ${fecha}`,
+          cuerpo:   `Horarios disponibles con *${barberoNombre}*:`,
+          pie:      'Escriba 0 para volver al menú',
+          boton:    'Ver horarios',
+          secciones,
+        })
+
+        await guardarSesion(telefono, 'ELIGIENDO_HORA', {
+          servicio,
+          servicioId,
+          barberoId,
+          barberoNombre,
+          fecha,
+          horasEnLista,
+        })
+
       } else {
-        await enviarMensaje(
-          telefono,
-          `Opción no válida. Elija un número del 1 al ${fechasDisponibles.length}\n\n0. Volver al menú`
-        )
+        await enviarMensaje(telefono, `Por favor seleccione un día del menú.`)
+        await enviarLista(telefono, {
+          cabecera: `${servicio} con ${barberoNombre}`,
+          cuerpo:   'Elija el día que prefiera:',
+          pie:      'Escriba 0 para volver al menú',
+          boton:    'Ver días',
+          secciones: [{
+            titulo: 'Próximos días disponibles',
+            filas: fechasDisponibles.map((f, j) => {
+              const d        = new Date(f + 'T12:00:00')
+              const n        = disponibilidad[j]?.length ?? 0
+              const hayHoras = n > 0
+              return {
+                id:          `fecha_${j}`,
+                titulo:      `${DIAS[d.getDay()]} ${f}`,
+                descripcion: hayHoras
+                  ? `${n} horario${n > 1 ? 's' : ''} disponible${n > 1 ? 's' : ''}`
+                  : 'Sin citas disponibles',
+              }
+            }),
+          }],
+        })
       }
       break
     }
 
+    // ── Eligiendo hora ─────────────────────────────────────────────────────────
     case 'ELIGIENDO_HORA': {
-      const opcionHora = parseInt(texto)
-      const { servicio, servicioId, barberoId, barberoNombre, fecha, horasDisponibles } = datos
+      const { servicio, servicioId, barberoId, barberoNombre, fecha, horasEnLista } = datos
 
-      if (opcionHora >= 1 && opcionHora <= horasDisponibles.length) {
-        const hora = horasDisponibles[opcionHora - 1]
+      // Extrae el índice: "hora_3" → 3  |  "1" → índice 0
+      const idx = texto.startsWith('hora_')
+        ? parseInt(texto.replace('hora_', ''))
+        : parseInt(texto) - 1
+
+      if (idx >= 0 && idx < horasEnLista.length) {
+        const hora = horasEnLista[idx]
 
         await enviarBotones(
           telefono,
@@ -292,22 +443,43 @@ async function procesarMensaje(telefono, texto) {
           `¿Confirmamos la cita?`,
           [
             { id: 'confirmar_cita', title: 'Confirmar' },
-            { id: 'cancelar_cita',  title: 'Cancelar'  }
+            { id: 'cancelar_cita',  title: 'Cancelar'  },
           ],
           'Peluquería Javier'
         )
         await guardarSesion(telefono, 'CONFIRMANDO_CITA', {
-          servicio, servicioId, barberoId, barberoNombre, fecha, hora
+          servicio, servicioId, barberoId, barberoNombre, fecha, hora,
         })
+
       } else {
-        await enviarMensaje(
-          telefono,
-          `Opción no válida. Elija un número del 1 al ${horasDisponibles.length}\n\n0. Volver al menú`
-        )
+        await enviarMensaje(telefono, `Por favor seleccione una hora del menú.`)
+        const manana = horasEnLista.filter(h => parseInt(h.split(':')[0]) < 14).slice(0, 10)
+        const tarde  = horasEnLista.filter(h => parseInt(h.split(':')[0]) >= 14).slice(0, 10)
+        const secciones = []
+        if (manana.length > 0) {
+          secciones.push({
+            titulo: 'Mañana',
+            filas: manana.map((h, j) => ({ id: `hora_${j}`, titulo: h })),
+          })
+        }
+        if (tarde.length > 0) {
+          secciones.push({
+            titulo: 'Tarde',
+            filas: tarde.map((h, j) => ({ id: `hora_${manana.length + j}`, titulo: h })),
+          })
+        }
+        await enviarLista(telefono, {
+          cabecera: `${DIAS[new Date(fecha + 'T12:00:00').getDay()]} ${fecha}`,
+          cuerpo:   `Horarios disponibles con *${barberoNombre}*:`,
+          pie:      'Escriba 0 para volver al menú',
+          boton:    'Ver horarios',
+          secciones,
+        })
       }
       break
     }
 
+    // ── Confirmando cita ───────────────────────────────────────────────────────
     case 'CONFIRMANDO_CITA': {
       const { servicio, servicioId, barberoId, barberoNombre, fecha, hora } = datos
 
@@ -321,23 +493,21 @@ async function procesarMensaje(telefono, texto) {
             `Profesional: ${barberoNombre}\n` +
             `Fecha: ${fecha}\n` +
             `Hora: ${hora}\n\n` +
-            `Le esperamos.\n\n` +
-            MENU
+            `Le esperamos.`
           )
         } else {
           await enviarMensaje(
             telefono,
-            `Se produjo un error al guardar la cita. Por favor, inténtelo de nuevo.\n\n${MENU}`
+            `Se produjo un error al guardar la cita. Por favor, inténtelo de nuevo.`
           )
         }
         await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
+        await enviarMenu(telefono)
 
       } else if (texto === 'cancelar_cita') {
-        await enviarMensaje(
-          telefono,
-          `La cita no ha sido guardada. Puede iniciar el proceso de reserva cuando lo desee.\n\n${MENU}`
-        )
+        await enviarMensaje(telefono, `La cita no ha sido guardada. Puede iniciar el proceso de reserva cuando lo desee.`)
         await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
+        await enviarMenu(telefono)
 
       } else {
         await enviarBotones(
@@ -347,7 +517,7 @@ async function procesarMensaje(telefono, texto) {
           `${fecha} a las ${hora}`,
           [
             { id: 'confirmar_cita', title: 'Confirmar' },
-            { id: 'cancelar_cita',  title: 'Cancelar'  }
+            { id: 'cancelar_cita',  title: 'Cancelar'  },
           ],
           'Peluquería Javier'
         )
@@ -355,31 +525,35 @@ async function procesarMensaje(telefono, texto) {
       break
     }
 
+    // ── Cancelando cita ────────────────────────────────────────────────────────
     case 'CANCELANDO_CITA': {
-      const opcionCancelar = parseInt(texto)
       const { citasPendientes } = datos
 
-      if (opcionCancelar >= 1 && opcionCancelar <= citasPendientes.length) {
-        const citaACancelar = citasPendientes[opcionCancelar - 1]
-        await cancelarCita(citaACancelar.id)
+      // Extrae el índice: "cancelar_0" → 0  |  "1" → índice 0
+      const idx = texto.startsWith('cancelar_')
+        ? parseInt(texto.replace('cancelar_', ''))
+        : parseInt(texto) - 1
+
+      if (idx >= 0 && idx < citasPendientes.length) {
+        const cita = citasPendientes[idx]
+        await cancelarCita(cita.id)
         await enviarMensaje(
           telefono,
-          `*Cita cancelada:*\n\n` +
-          `Fecha: ${citaACancelar.fecha} a las ${citaACancelar.hora.substring(0, 5)}\n` +
-          `Servicio: ${citaACancelar.servicios.nombre}\n` +
-          `Profesional: ${citaACancelar.barberos?.nombre || 'Sin asignar'}\n\n` +
-          MENU
+          `*Cita cancelada correctamente:*\n\n` +
+          `Fecha: ${cita.fecha} a las ${cita.hora.substring(0, 5)}\n` +
+          `Servicio: ${cita.servicios.nombre}\n` +
+          `Profesional: ${cita.barberos?.nombre || 'Sin asignar'}`
         )
         await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
+        await enviarMenu(telefono)
+
       } else {
-        await enviarMensaje(
-          telefono,
-          `Opción no válida. Elija un número del 1 al ${citasPendientes.length}\n\n0. Volver al menú`
-        )
+        await enviarMensaje(telefono, `Por favor seleccione una cita de la lista.`)
       }
       break
     }
 
+    // ── Fallback ───────────────────────────────────────────────────────────────
     default: {
       await guardarSesion(telefono, 'INICIO', {})
       await procesarMensaje(telefono, texto)
