@@ -594,7 +594,7 @@ async function procesarMensaje(telefono, texto) {
       break
     }
 
-    // ── Cancelando cita ────────────────────────────────────────────────────────
+    // ── Cancelando cita (selección) ────────────────────────────────────────────
     case 'CANCELANDO_CITA': {
       const { citasPendientes } = datos
 
@@ -605,19 +605,59 @@ async function procesarMensaje(telefono, texto) {
 
       if (idx >= 0 && idx < citasPendientes.length) {
         const cita = citasPendientes[idx]
-        await cancelarCita(cita.id)
+        await enviarBotones(
+          telefono,
+          `¿Confirma que desea cancelar esta cita?\n\n` +
+          `Fecha: ${cita.fecha} a las ${cita.hora.substring(0, 5)}\n` +
+          `Servicio: ${cita.servicios.nombre}\n` +
+          `Profesional: ${cita.barberos?.nombre || 'Sin asignar'}`,
+          [
+            { id: 'confirmar_cancelacion', title: 'Cancelar cita' },
+            { id: 'rechazar_cancelacion',  title: 'Mantener cita' },
+          ],
+          'Peluquería Javier'
+        )
+        await guardarSesion(telefono, 'CONFIRMANDO_CANCELACION', { citaACancelar: cita })
+
+      } else {
+        await enviarMensaje(telefono, `Por favor seleccione una cita de la lista.`)
+      }
+      break
+    }
+
+    // ── Confirmando cancelación ────────────────────────────────────────────────
+    case 'CONFIRMANDO_CANCELACION': {
+      const { citaACancelar } = datos
+
+      if (texto === 'confirmar_cancelacion') {
+        await cancelarCita(citaACancelar.id)
         await enviarMensaje(
           telefono,
           `*Cita cancelada correctamente:*\n\n` +
-          `Fecha: ${cita.fecha} a las ${cita.hora.substring(0, 5)}\n` +
-          `Servicio: ${cita.servicios.nombre}\n` +
-          `Profesional: ${cita.barberos?.nombre || 'Sin asignar'}`
+          `Fecha: ${citaACancelar.fecha} a las ${citaACancelar.hora.substring(0, 5)}\n` +
+          `Servicio: ${citaACancelar.servicios.nombre}\n` +
+          `Profesional: ${citaACancelar.barberos?.nombre || 'Sin asignar'}`
         )
         await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
         await enviarMenu(telefono)
 
+      } else if (texto === 'rechazar_cancelacion') {
+        await enviarMensaje(telefono, `La cita se ha mantenido. No se ha realizado ningún cambio.`)
+        await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
+        await enviarMenu(telefono)
+
       } else {
-        await enviarMensaje(telefono, `Por favor seleccione una cita de la lista.`)
+        await enviarBotones(
+          telefono,
+          `Por favor pulse uno de los botones:\n\n` +
+          `Fecha: ${citaACancelar.fecha} a las ${citaACancelar.hora.substring(0, 5)}\n` +
+          `Servicio: ${citaACancelar.servicios.nombre}`,
+          [
+            { id: 'confirmar_cancelacion', title: 'Cancelar cita' },
+            { id: 'rechazar_cancelacion',  title: 'Mantener cita' },
+          ],
+          'Peluquería Javier'
+        )
       }
       break
     }
