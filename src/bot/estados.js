@@ -410,9 +410,10 @@ async function procesarMensaje(telefono, texto) {
           break
         }
 
-        // Agrupar en Mañana / Tarde (máx 10 por sección)
-        const manana = horasLibres.filter(h => parseInt(h.split(':')[0]) < 14).slice(0, 10)
-        const tarde  = horasLibres.filter(h => parseInt(h.split(':')[0]) >= 14).slice(0, 10)
+        // WhatsApp permite máx 10 filas en total entre todas las secciones
+        const horasLimitadas = horasLibres.slice(0, 10)
+        const manana = horasLimitadas.filter(h => parseInt(h.split(':')[0]) < 14)
+        const tarde  = horasLimitadas.filter(h => parseInt(h.split(':')[0]) >= 14)
         const horasEnLista = [...manana, ...tarde]
 
         const secciones = []
@@ -521,8 +522,8 @@ async function procesarMensaje(telefono, texto) {
 
       } else {
         await enviarMensaje(telefono, `Por favor seleccione una hora del menú.`)
-        const manana = horasEnLista.filter(h => parseInt(h.split(':')[0]) < 14).slice(0, 10)
-        const tarde  = horasEnLista.filter(h => parseInt(h.split(':')[0]) >= 14).slice(0, 10)
+        const manana = horasEnLista.filter(h => parseInt(h.split(':')[0]) < 14)
+        const tarde  = horasEnLista.filter(h => parseInt(h.split(':')[0]) >= 14)
         const secciones = []
         if (manana.length > 0) {
           secciones.push({
