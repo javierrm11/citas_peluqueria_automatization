@@ -297,6 +297,7 @@ async function procesarMensaje(telefono, texto) {
           barberoNombre: barbero.nombre,
           fechasDisponibles: fechas,
           disponibilidad,
+          barberos,          // guardamos la lista para re-selección desde lista antigua
         })
 
       } else {
@@ -320,7 +321,58 @@ async function procesarMensaje(telefono, texto) {
 
     // ── Eligiendo fecha ────────────────────────────────────────────────────────
     case 'ELIGIENDO_FECHA': {
-      const { servicio, servicioId, barberoId, barberoNombre, fechasDisponibles, disponibilidad } = datos
+      const { servicio, servicioId, barberoId, barberoNombre, fechasDisponibles, disponibilidad, barberos } = datos
+
+      // El usuario pulsó de nuevo sobre la lista de barberos anterior → re-selección
+      if (texto.startsWith('barbero_')) {
+        const bidx = parseInt(texto.replace('barbero_', ''))
+        if (barberos && bidx >= 0 && bidx < barberos.length) {
+          const nuevoBarbero = barberos[bidx]
+          const hoy = new Date()
+          const fechas = []
+          let i = 1
+          while (fechas.length < 4) {
+            const d = new Date(hoy)
+            d.setDate(hoy.getDate() + i)
+            if (d.getDay() !== 0) fechas.push(d.toISOString().split('T')[0])
+            i++
+          }
+          const disp = await Promise.all(
+            fechas.map(f => obtenerHorasDisponibles(f, servicioId, nuevoBarbero.id))
+          )
+          await enviarLista(telefono, {
+            cabecera: `${servicio} con ${nuevoBarbero.nombre}`,
+            cuerpo:   'Elija el día que prefiera:',
+            pie:      'Escriba 0 para volver al menú',
+            boton:    'Ver días',
+            secciones: [{
+              titulo: 'Próximos días disponibles',
+              filas: fechas.map((f, j) => {
+                const d = new Date(f + 'T12:00:00')
+                const n = disp[j].length
+                return {
+                  id:          `fecha_${j}`,
+                  titulo:      `${DIAS[d.getDay()]} ${f}`,
+                  descripcion: n > 0
+                    ? `${n} horario${n > 1 ? 's' : ''} disponible${n > 1 ? 's' : ''}`
+                    : 'Sin citas disponibles',
+                }
+              }),
+            }],
+          })
+          await guardarSesion(telefono, 'ELIGIENDO_FECHA', {
+            servicio, servicioId,
+            barberoId:    nuevoBarbero.id,
+            barberoNombre: nuevoBarbero.nombre,
+            fechasDisponibles: fechas,
+            disponibilidad: disp,
+            barberos,
+          })
+        } else {
+          await enviarMensaje(telefono, `Por favor seleccione un profesional del menú.`)
+        }
+        break
+      }
 
       // Extrae el índice: "fecha_2" → 2  |  "1" → índice 0
       const idx = texto.startsWith('fecha_')
@@ -392,6 +444,10 @@ async function procesarMensaje(telefono, texto) {
           barberoNombre,
           fecha,
           horasEnLista,
+          // datos del paso anterior para manejar re-selección de lista antigua
+          fechasDisponibles,
+          disponibilidad,
+          barberos,
         })
 
       } else {
@@ -424,6 +480,13 @@ async function procesarMensaje(telefono, texto) {
     // ── Eligiendo hora ─────────────────────────────────────────────────────────
     case 'ELIGIENDO_HORA': {
       const { servicio, servicioId, barberoId, barberoNombre, fecha, horasEnLista } = datos
+
+      // El usuario pulsó de nuevo sobre la lista de fechas anterior → volver a elegir hora
+      if (texto.startsWith('fecha_')) {
+        await guardarSesion(telefono, 'ELIGIENDO_FECHA', datos)
+        await procesarMensaje(telefono, texto)
+        break
+      }
 
       // Extrae el índice: "hora_3" → 3  |  "1" → índice 0
       const idx = texto.startsWith('hora_')
