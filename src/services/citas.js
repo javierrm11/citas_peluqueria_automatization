@@ -195,9 +195,20 @@ async function obtenerHorasDisponibles(fecha, servicioId, barberoId) {
   }
 
   const duracion  = servicio.duracion_minutos
+
+  // 2. Verificar si el barbero está de vacaciones ese día
+  const { data: vacaciones } = await supabase
+    .from('vacaciones')
+    .select('id')
+    .eq('barbero_id', barberoId)
+    .lte('fecha_inicio', fecha)
+    .gte('fecha_fin', fecha)
+
+  if (vacaciones && vacaciones.length > 0) return []
+
   const diaSemana = new Date(fecha + 'T12:00:00').getDay()
 
-  // 2. Franjas horarias del barbero ese día
+  // 3. Franjas horarias del barbero ese día
   const { data: franjas, error: errFranjas } = await supabase
     .from('horarios_barbero')
     .select('hora_inicio, hora_fin')
@@ -208,12 +219,12 @@ async function obtenerHorasDisponibles(fecha, servicioId, barberoId) {
 
   if (errFranjas || !franjas || franjas.length === 0) return []
 
-  // 3. Generar todos los slots del barbero ese día
+  // 4. Generar todos los slots del barbero ese día
   const todosLosSlots = franjas.flatMap(f =>
     generarSlots(f.hora_inicio, f.hora_fin, duracion)
   )
 
-  // 4. Citas ya confirmadas del barbero ese día
+  // 5. Citas ya confirmadas del barbero ese día
   const { data: citasDelDia } = await supabase
     .from('citas')
     .select('hora, servicios(duracion_minutos)')
