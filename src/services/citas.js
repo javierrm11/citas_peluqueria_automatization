@@ -2,101 +2,104 @@ const supabase = require('../database/db')
 
 // ─── Servicios desde BD ───────────────────────────────────────────────────────
 
-let _serviciosCache    = null
-let _serviciosCacheExp = 0
-const CACHE_TTL_MS     = 10 * 60 * 1000   // 10 minutos
+const _serviciosCache = {}   // { [empresaId]: { data, exp } }
+const CACHE_TTL_MS    = 10 * 60 * 1000   // 10 minutos
 
-async function obtenerServicios() {
-  if (_serviciosCache && Date.now() < _serviciosCacheExp) return _serviciosCache
+async function obtenerServicios(empresaId) {
+  const entry = _serviciosCache[empresaId]
+  if (entry && Date.now() < entry.exp) return entry.data
 
   const { data, error } = await supabase
     .from('servicios')
     .select('id, nombre, precio, duracion_minutos')
+    .eq('empresa_id', empresaId)
     .order('id', { ascending: true })
 
   if (error || !data) {
     console.error('❌ Error obteniendo servicios:', error)
-    return _serviciosCache || {}   // devuelve la caché anterior si existe
+    return entry?.data || {}
   }
 
-  _serviciosCache = {}
+  const result = {}
   data.forEach((s, idx) => {
-    _serviciosCache[String(idx + 1)] = {
+    result[String(idx + 1)] = {
       id:               s.id,
       nombre:           s.nombre,
       precio:           `${s.precio}€`,
       duracion_minutos: s.duracion_minutos
     }
   })
-  _serviciosCacheExp = Date.now() + CACHE_TTL_MS
+  _serviciosCache[empresaId] = { data: result, exp: Date.now() + CACHE_TTL_MS }
 
-  return _serviciosCache
+  return result
 }
 
-function invalidarCacheServicios() {
-  _serviciosCache    = null
-  _serviciosCacheExp = 0
+function invalidarCacheServicios(empresaId) {
+  delete _serviciosCache[empresaId]
 }
 
 // ─── Barberos disponibles para un servicio ────────────────────────────────────
 
-async function obtenerBarberosPorServicio(servicioId) {
+async function obtenerBarberosPorServicio(servicioId, empresaId) {
   const { data, error } = await supabase
     .from('barbero_servicios')
     .select('barberos(id, nombre)')
     .eq('servicio_id', servicioId)
     .eq('barberos.activo', true)
+    .eq('barberos.empresa_id', empresaId)
 
   if (error || !data) {
     console.error('❌ Error obteniendo barberos:', error)
     return []
   }
 
-  // Filtra nulls (barberos inactivos no devuelven datos)
   return data.map(r => r.barberos).filter(Boolean)
 }
 
 // ─── Cliente ──────────────────────────────────────────────────────────────────
 
-async function obtenerOCrearCliente(telefono) {
+async function obtenerOCrearCliente(telefono, empresaId) {
   const { data: existing } = await supabase
     .from('clientes')
     .select('*')
     .eq('telefono', telefono)
+    .eq('empresa_id', empresaId)
     .single()
 
   if (existing) return existing
 
   const { data: nuevo } = await supabase
     .from('clientes')
-    .insert({ telefono })
+    .insert({ telefono, empresa_id: empresaId })
     .select()
     .single()
 
   return nuevo
 }
 
-async function obtenerNombreCliente(telefono) {
+async function obtenerNombreCliente(telefono, empresaId) {
   const { data } = await supabase
     .from('clientes')
     .select('nombre')
     .eq('telefono', telefono)
+    .eq('empresa_id', empresaId)
     .single()
   return data?.nombre || null
 }
 
-async function actualizarNombreCliente(telefono, nombre) {
-  await obtenerOCrearCliente(telefono)   // garantiza que el cliente existe
+async function actualizarNombreCliente(telefono, nombre, empresaId) {
+  await obtenerOCrearCliente(telefono, empresaId)
   await supabase
     .from('clientes')
     .update({ nombre })
     .eq('telefono', telefono)
+    .eq('empresa_id', empresaId)
 }
 
 // ─── Guardar cita ─────────────────────────────────────────────────────────────
 
-async function guardarCita(telefono, servicioId, barberoId, fecha, hora) {
-  const cliente = await obtenerOCrearCliente(telefono)
+async function guardarCita(telefono, servicioId, barberoId, fecha, hora, empresaId) {
+  const cliente = await obtenerOCrearCliente(telefono, empresaId)
 
   const { data, error } = await supabase
     .from('citas')
@@ -104,6 +107,7 @@ async function guardarCita(telefono, servicioId, barberoId, fecha, hora) {
       cliente_id:           cliente.id,
       servicio_id:          servicioId,
       barbero_id:           barberoId,
+      empresa_id:           empresaId,
       fecha,
       hora,
       estado:               'confirmada',
@@ -118,11 +122,12 @@ async function guardarCita(telefono, servicioId, barberoId, fecha, hora) {
 
 // ─── Obtener citas del cliente ────────────────────────────────────────────────
 
-async function obtenerCitasCliente(telefono) {
+async function obtenerCitasCliente(telefono, empresaId) {
   const { data: cliente } = await supabase
     .from('clientes')
     .select('id')
     .eq('telefono', telefono)
+    .eq('empresa_id', empresaId)
     .single()
 
   if (!cliente) return []
@@ -133,6 +138,7 @@ async function obtenerCitasCliente(telefono) {
     .from('citas')
     .select('id, fecha, hora, servicio_id, barbero_id, servicios(id, nombre, precio), barberos(id, nombre)')
     .eq('cliente_id', cliente.id)
+    .eq('empresa_id', empresaId)
     .eq('estado', 'confirmada')
     .gte('fecha', hoy)
     .order('fecha', { ascending: true })
@@ -252,7 +258,6 @@ async function obtenerHorasDisponibles(fecha, servicioId, barberoId) {
   const libres = todosLosSlots.filter(slot => !ocupados.has(slot))
 
   // Si es hoy, descartar slots que ya han pasado (con 15 min de margen)
-  // Usamos hora de Madrid porque los slots del barbero están en esa zona horaria
   const ahoraEspana = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Madrid' }))
   const yy  = ahoraEspana.getFullYear()
   const mm  = String(ahoraEspana.getMonth() + 1).padStart(2, '0')

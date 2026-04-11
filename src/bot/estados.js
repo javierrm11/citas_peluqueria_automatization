@@ -15,36 +15,39 @@ const DIAS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 
 // ─── Helpers de sesión ────────────────────────────────────────────────────────
 
-async function obtenerSesion(telefono) {
+async function obtenerSesion(telefono, empresaId) {
   const { data, error } = await supabase
     .from('sesiones')
     .select('estado, datos')
     .eq('telefono', telefono)
+    .eq('empresa_id', empresaId)
     .single()
 
   if (error || !data) return { estado: 'INICIO', datos: {} }
   return { estado: data.estado, datos: data.datos || {} }
 }
 
-async function guardarSesion(telefono, estado, datos = {}) {
+async function guardarSesion(telefono, estado, datos = {}, empresaId) {
   await supabase
     .from('sesiones')
     .upsert(
-      { telefono, estado, datos, updated_at: new Date().toISOString() },
-      { onConflict: 'telefono' }
+      { telefono, empresa_id: empresaId, estado, datos, updated_at: new Date().toISOString() },
+      { onConflict: 'telefono,empresa_id' }
     )
 }
 
-async function eliminarSesion(telefono) {
-  await supabase.from('sesiones').delete().eq('telefono', telefono)
+async function eliminarSesion(telefono, empresaId) {
+  await supabase.from('sesiones').delete()
+    .eq('telefono', telefono)
+    .eq('empresa_id', empresaId)
 }
 
 // ─── Menú principal como lista interactiva ────────────────────────────────────
 
-async function enviarMenu(telefono, nombre = null) {
+async function enviarMenu(telefono, nombre = null, empresa) {
   const saludo = nombre ? `Hola, ${nombre}. ¿En qué podemos ayudarle?` : '¿En qué podemos ayudarle hoy?'
   await enviarLista(telefono, {
-    cabecera: 'Peluquería Javier',
+    cabecera: empresa.nombre,
     cuerpo:   saludo,
     pie:      'Escriba 0 en cualquier momento para salir',
     boton:    'Ver opciones',
@@ -66,29 +69,30 @@ async function enviarMenu(telefono, nombre = null) {
 
 const SALUDO_RE = /^(hola|buenas|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches|hey|hi|saludos|qu[eé]\s+tal|good\s+morning|good\s+afternoon)/i
 
-async function procesarMensaje(telefono, texto) {
-  let { estado, datos } = await obtenerSesion(telefono)
+async function procesarMensaje(telefono, texto, empresa) {
+  const empresaId = empresa.id
+  let { estado, datos } = await obtenerSesion(telefono, empresaId)
   texto = texto.trim()
 
   // Si el usuario saluda, reiniciar sesión siempre desde el principio
   if (SALUDO_RE.test(texto)) {
-    await eliminarSesion(telefono)
+    await eliminarSesion(telefono, empresaId)
     estado = 'INICIO'
     datos  = {}
   }
 
   // Nombre del cliente (null si aún no lo ha proporcionado)
-  const nombreCliente = await obtenerNombreCliente(telefono)
+  const nombreCliente = await obtenerNombreCliente(telefono, empresaId)
 
   // Escape global: "0" o "menu_0" vuelve al menú (o cierra si ya está en él)
   if (texto === '0' || texto === 'menu_0') {
     if (estado === 'ESPERANDO_OPCION' || estado === 'INICIO') {
       const despedida = nombreCliente ? `Hasta pronto, ${nombreCliente}.` : `Hasta pronto. Si necesita algo, escríbanos cuando quiera.`
       await enviarMensaje(telefono, despedida)
-      await eliminarSesion(telefono)
+      await eliminarSesion(telefono, empresaId)
     } else {
-      await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-      await enviarMenu(telefono, nombreCliente)
+      await guardarSesion(telefono, 'ESPERANDO_OPCION', {}, empresaId)
+      await enviarMenu(telefono, nombreCliente, empresa)
     }
     return
   }
@@ -98,12 +102,12 @@ async function procesarMensaje(telefono, texto) {
     // ── Bienvenida ─────────────────────────────────────────────────────────────
     case 'INICIO': {
       if (!nombreCliente) {
-        await enviarMensaje(telefono, `Bienvenido a *Peluquería Javier*.\n\n¿Cómo se llama? Así podremos atenderle mejor.`)
-        await guardarSesion(telefono, 'PIDIENDO_NOMBRE', {})
+        await enviarMensaje(telefono, `Bienvenido a *${empresa.nombre}*.\n\n¿Cómo se llama? Así podremos atenderle mejor.`)
+        await guardarSesion(telefono, 'PIDIENDO_NOMBRE', {}, empresaId)
       } else {
         await enviarMensaje(telefono, `Bienvenido de nuevo, *${nombreCliente}*.`)
-        await enviarMenu(telefono, nombreCliente)
-        await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
+        await enviarMenu(telefono, nombreCliente, empresa)
+        await guardarSesion(telefono, 'ESPERANDO_OPCION', {}, empresaId)
       }
       break
     }
@@ -115,10 +119,10 @@ async function procesarMensaje(telefono, texto) {
         await enviarMensaje(telefono, `Por favor indique su nombre para continuar.`)
         break
       }
-      await actualizarNombreCliente(telefono, nombre)
+      await actualizarNombreCliente(telefono, nombre, empresaId)
       await enviarMensaje(telefono, `Encantados, *${nombre}*.`)
-      await enviarMenu(telefono, nombre)
-      await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
+      await enviarMenu(telefono, nombre, empresa)
+      await guardarSesion(telefono, 'ESPERANDO_OPCION', {}, empresaId)
       break
     }
 
@@ -133,7 +137,7 @@ async function procesarMensaje(telefono, texto) {
                : texto
 
       if (op === '1') {
-        const SERVICIOS = await obtenerServicios()
+        const SERVICIOS = await obtenerServicios(empresaId)
 
         await enviarLista(telefono, {
           cabecera: 'Servicios disponibles',
@@ -151,10 +155,10 @@ async function procesarMensaje(telefono, texto) {
         })
         await guardarSesion(telefono, 'ELIGIENDO_SERVICIO', {
           totalServicios: Object.keys(SERVICIOS).length,
-        })
+        }, empresaId)
 
       } else if (op === '2') {
-        const citas = await obtenerCitasCliente(telefono)
+        const citas = await obtenerCitasCliente(telefono, empresaId)
         if (citas.length === 0) {
           await enviarMensaje(telefono, `No tiene citas próximas registradas.`)
         } else {
@@ -166,15 +170,15 @@ async function procesarMensaje(telefono, texto) {
           })
           await enviarMensaje(telefono, msg.trimEnd())
         }
-        await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-        await enviarMenu(telefono, nombreCliente)
+        await guardarSesion(telefono, 'ESPERANDO_OPCION', {}, empresaId)
+        await enviarMenu(telefono, nombreCliente, empresa)
 
       } else if (op === '3') {
-        const citas = await obtenerCitasCliente(telefono)
+        const citas = await obtenerCitasCliente(telefono, empresaId)
         if (citas.length === 0) {
           await enviarMensaje(telefono, `No tiene citas pendientes para cancelar.`)
-          await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-          await enviarMenu(telefono, nombreCliente)
+          await guardarSesion(telefono, 'ESPERANDO_OPCION', {}, empresaId)
+          await enviarMenu(telefono, nombreCliente, empresa)
         } else {
           await enviarLista(telefono, {
             cabecera: 'Cancelar cita',
@@ -190,7 +194,7 @@ async function procesarMensaje(telefono, texto) {
               })),
             }],
           })
-          await guardarSesion(telefono, 'CANCELANDO_CITA', { citasPendientes: citas })
+          await guardarSesion(telefono, 'CANCELANDO_CITA', { citasPendientes: citas }, empresaId)
         }
 
       } else if (op === '4') {
@@ -198,14 +202,14 @@ async function procesarMensaje(telefono, texto) {
           telefono,
           `Ha solicitado contactar con soporte.\n\nUn responsable le atenderá a la brevedad posible.\n\nEscriba su consulta a continuación:\n\n_Escriba 0 para volver al menú._`
         )
-        await guardarSesion(telefono, 'SOPORTE', {})
+        await guardarSesion(telefono, 'SOPORTE', {}, empresaId)
 
       } else if (op === '5') {
-        const citas = await obtenerCitasCliente(telefono)
+        const citas = await obtenerCitasCliente(telefono, empresaId)
         if (citas.length === 0) {
           await enviarMensaje(telefono, `No tiene citas próximas para reprogramar.`)
-          await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-          await enviarMenu(telefono, nombreCliente)
+          await guardarSesion(telefono, 'ESPERANDO_OPCION', {}, empresaId)
+          await enviarMenu(telefono, nombreCliente, empresa)
         } else {
           await enviarLista(telefono, {
             cabecera: 'Reprogramar cita',
@@ -221,12 +225,12 @@ async function procesarMensaje(telefono, texto) {
               })),
             }],
           })
-          await guardarSesion(telefono, 'REPROGRAMANDO_CITA', { citasPendientes: citas })
+          await guardarSesion(telefono, 'REPROGRAMANDO_CITA', { citasPendientes: citas }, empresaId)
         }
 
       } else {
         await enviarMensaje(telefono, `Por favor seleccione una opción del menú.`)
-        await enviarMenu(telefono, nombreCliente)
+        await enviarMenu(telefono, nombreCliente, empresa)
       }
       break
     }
@@ -237,14 +241,14 @@ async function procesarMensaje(telefono, texto) {
         telefono,
         `Su mensaje ha sido recibido. En breve nos ponemos en contacto con usted.`
       )
-      await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-      await enviarMenu(telefono, nombreCliente)
+      await guardarSesion(telefono, 'ESPERANDO_OPCION', {}, empresaId)
+      await enviarMenu(telefono, nombreCliente, empresa)
       break
     }
 
     // ── Eligiendo servicio ─────────────────────────────────────────────────────
     case 'ELIGIENDO_SERVICIO': {
-      const SERVICIOS = await obtenerServicios()
+      const SERVICIOS = await obtenerServicios(empresaId)
 
       // Extrae la clave: "servicio_1" → "1"  |  "1" → "1"
       const clave = texto.startsWith('servicio_') ? texto.replace('servicio_', '') : texto
@@ -252,15 +256,15 @@ async function procesarMensaje(telefono, texto) {
       if (SERVICIOS[clave]) {
         const servicio   = SERVICIOS[clave].nombre
         const servicioId = SERVICIOS[clave].id
-        const barberos   = await obtenerBarberosPorServicio(servicioId)
+        const barberos   = await obtenerBarberosPorServicio(servicioId, empresaId)
 
         if (barberos.length === 0) {
           await enviarMensaje(
             telefono,
             `En este momento no hay profesionales disponibles para *${servicio}*.`
           )
-          await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-          await enviarMenu(telefono, nombreCliente)
+          await guardarSesion(telefono, 'ESPERANDO_OPCION', {}, empresaId)
+          await enviarMenu(telefono, nombreCliente, empresa)
           break
         }
 
@@ -277,11 +281,11 @@ async function procesarMensaje(telefono, texto) {
             })),
           }],
         })
-        await guardarSesion(telefono, 'ELIGIENDO_BARBERO', { servicio, servicioId, barberos })
+        await guardarSesion(telefono, 'ELIGIENDO_BARBERO', { servicio, servicioId, barberos }, empresaId)
 
       } else {
         await enviarMensaje(telefono, `Por favor seleccione un servicio del menú.`)
-        const SERVICIOS2 = await obtenerServicios()
+        const SERVICIOS2 = await obtenerServicios(empresaId)
         await enviarLista(telefono, {
           cabecera: 'Servicios disponibles',
           cuerpo:   '¿Qué servicio necesita hoy ?',
@@ -358,8 +362,8 @@ async function procesarMensaje(telefono, texto) {
           barberoNombre: barbero.nombre,
           fechasDisponibles: fechas,
           disponibilidad,
-          barberos,          // guardamos la lista para re-selección desde lista antigua
-        })
+          barberos,
+        }, empresaId)
 
       } else {
         await enviarMensaje(telefono, `Por favor seleccione un profesional del menú.`)
@@ -423,12 +427,12 @@ async function procesarMensaje(telefono, texto) {
           })
           await guardarSesion(telefono, 'ELIGIENDO_FECHA', {
             servicio, servicioId,
-            barberoId:    nuevoBarbero.id,
+            barberoId:     nuevoBarbero.id,
             barberoNombre: nuevoBarbero.nombre,
             fechasDisponibles: fechas,
             disponibilidad: disp,
             barberos,
-          })
+          }, empresaId)
         } else {
           await enviarMensaje(telefono, `Por favor seleccione un profesional del menú.`)
         }
@@ -511,11 +515,10 @@ async function procesarMensaje(telefono, texto) {
           barberoNombre,
           fecha,
           horasEnLista,
-          // datos del paso anterior para manejar re-selección de lista antigua
           fechasDisponibles,
           disponibilidad,
           barberos,
-        })
+        }, empresaId)
 
       } else {
         await enviarMensaje(telefono, `Por favor seleccione un día del menú.`)
@@ -550,8 +553,8 @@ async function procesarMensaje(telefono, texto) {
 
       // El usuario pulsó de nuevo sobre la lista de fechas anterior → volver a elegir hora
       if (texto.startsWith('fecha_')) {
-        await guardarSesion(telefono, 'ELIGIENDO_FECHA', datos)
-        await procesarMensaje(telefono, texto)
+        await guardarSesion(telefono, 'ELIGIENDO_FECHA', datos, empresaId)
+        await procesarMensaje(telefono, texto, empresa)
         break
       }
 
@@ -575,11 +578,11 @@ async function procesarMensaje(telefono, texto) {
             { id: 'confirmar_cita', title: 'Confirmar' },
             { id: 'cancelar_cita',  title: 'Cancelar'  },
           ],
-          'Peluquería Javier'
+          empresa.nombre
         )
         await guardarSesion(telefono, 'CONFIRMANDO_CITA', {
           servicio, servicioId, barberoId, barberoNombre, fecha, hora,
-        })
+        }, empresaId)
 
       } else {
         await enviarMensaje(telefono, `Por favor seleccione una hora del menú.`)
@@ -614,7 +617,7 @@ async function procesarMensaje(telefono, texto) {
       const { servicio, servicioId, barberoId, barberoNombre, fecha, hora } = datos
 
       if (texto === 'confirmar_cita') {
-        const cita = await guardarCita(telefono, servicioId, barberoId, fecha, hora)
+        const cita = await guardarCita(telefono, servicioId, barberoId, fecha, hora, empresaId)
         if (cita) {
           await enviarMensaje(
             telefono,
@@ -631,13 +634,13 @@ async function procesarMensaje(telefono, texto) {
             `Se produjo un error al guardar la cita. Por favor, inténtelo de nuevo.`
           )
         }
-        await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-        await enviarMenu(telefono, nombreCliente)
+        await guardarSesion(telefono, 'ESPERANDO_OPCION', {}, empresaId)
+        await enviarMenu(telefono, nombreCliente, empresa)
 
       } else if (texto === 'cancelar_cita') {
         await enviarMensaje(telefono, `La cita no ha sido guardada. Puede iniciar el proceso de reserva cuando lo desee.`)
-        await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-        await enviarMenu(telefono, nombreCliente)
+        await guardarSesion(telefono, 'ESPERANDO_OPCION', {}, empresaId)
+        await enviarMenu(telefono, nombreCliente, empresa)
 
       } else {
         await enviarBotones(
@@ -649,7 +652,7 @@ async function procesarMensaje(telefono, texto) {
             { id: 'confirmar_cita', title: 'Confirmar' },
             { id: 'cancelar_cita',  title: 'Cancelar'  },
           ],
-          'Peluquería Javier'
+          empresa.nombre
         )
       }
       break
@@ -676,9 +679,9 @@ async function procesarMensaje(telefono, texto) {
             { id: 'confirmar_cancelacion', title: 'Cancelar cita' },
             { id: 'rechazar_cancelacion',  title: 'Mantener cita' },
           ],
-          'Peluquería Javier'
+          empresa.nombre
         )
-        await guardarSesion(telefono, 'CONFIRMANDO_CANCELACION', { citaACancelar: cita })
+        await guardarSesion(telefono, 'CONFIRMANDO_CANCELACION', { citaACancelar: cita }, empresaId)
 
       } else {
         await enviarMensaje(telefono, `Por favor seleccione una cita de la lista.`)
@@ -699,13 +702,13 @@ async function procesarMensaje(telefono, texto) {
           `Servicio: ${citaACancelar.servicios.nombre}\n` +
           `Profesional: ${citaACancelar.barberos?.nombre || 'Sin asignar'}`
         )
-        await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-        await enviarMenu(telefono, nombreCliente)
+        await guardarSesion(telefono, 'ESPERANDO_OPCION', {}, empresaId)
+        await enviarMenu(telefono, nombreCliente, empresa)
 
       } else if (texto === 'rechazar_cancelacion') {
         await enviarMensaje(telefono, `La cita se ha mantenido. No se ha realizado ningún cambio.`)
-        await guardarSesion(telefono, 'ESPERANDO_OPCION', {})
-        await enviarMenu(telefono, nombreCliente)
+        await guardarSesion(telefono, 'ESPERANDO_OPCION', {}, empresaId)
+        await enviarMenu(telefono, nombreCliente, empresa)
 
       } else {
         await enviarBotones(
@@ -717,7 +720,7 @@ async function procesarMensaje(telefono, texto) {
             { id: 'confirmar_cancelacion', title: 'Cancelar cita' },
             { id: 'rechazar_cancelacion',  title: 'Mantener cita' },
           ],
-          'Peluquería Javier'
+          empresa.nombre
         )
       }
       break
@@ -790,7 +793,7 @@ async function procesarMensaje(telefono, texto) {
           fechasDisponibles: fechas,
           disponibilidad,
           barberos: null,   // no hay lista de barberos (viene de reprogramación)
-        })
+        }, empresaId)
 
       } else {
         await enviarMensaje(telefono, `Por favor seleccione una cita de la lista.`)
@@ -800,8 +803,8 @@ async function procesarMensaje(telefono, texto) {
 
     // ── Fallback ───────────────────────────────────────────────────────────────
     default: {
-      await guardarSesion(telefono, 'INICIO', {})
-      await procesarMensaje(telefono, texto)
+      await guardarSesion(telefono, 'INICIO', {}, empresaId)
+      await procesarMensaje(telefono, texto, empresa)
     }
   }
 }
