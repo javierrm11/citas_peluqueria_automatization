@@ -256,7 +256,29 @@ async function procesarMensaje(telefono, texto, empresa) {
       if (SERVICIOS[clave]) {
         const servicio   = SERVICIOS[clave].nombre
         const servicioId = SERVICIOS[clave].id
-        const barberos   = await obtenerBarberosPorServicio(servicioId, empresaId)
+        const barberosRaw = await obtenerBarberosPorServicio(servicioId, empresaId)
+
+        // Próximos 4 días hábiles (sin domingo) para comprobar disponibilidad
+        const hoyCheck = new Date()
+        const fechasCheck = []
+        let ci = 0
+        while (fechasCheck.length < 4) {
+          const d = new Date(hoyCheck)
+          d.setDate(hoyCheck.getDate() + ci)
+          if (d.getDay() !== 0) fechasCheck.push(d.toISOString().split('T')[0])
+          ci++
+        }
+
+        // Filtrar barberos que tengan al menos un hueco en los próximos días
+        const barberosDispo = await Promise.all(
+          barberosRaw.map(async b => {
+            const slots = await Promise.all(
+              fechasCheck.map(f => obtenerHorasDisponibles(f, servicioId, b.id))
+            )
+            return slots.some(s => s.length > 0) ? b : null
+          })
+        )
+        const barberos = barberosDispo.filter(Boolean)
 
         if (barberos.length === 0) {
           await enviarMensaje(

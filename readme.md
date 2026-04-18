@@ -251,3 +251,10 @@ Nueva tabla `bloqueos` con `barbero_id`, `fecha_inicio`, `fecha_fin`, `motivo`.
 ## 👨‍💻 Autor
 
 Desarrollado para automatizar la gestión de citas de Peluquería Javier y mejorar la experiencia del cliente vía WhatsApp.
+
+
+
+fix panel
+diseño
+que detecte cuando alguien le hable
+fix vacaciones que no salga el nombre si no tiene citas
