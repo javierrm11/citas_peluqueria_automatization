@@ -641,6 +641,9 @@ async function procesarMensaje(telefono, texto, empresa) {
       if (texto === 'confirmar_cita') {
         const cita = await guardarCita(telefono, servicioId, barberoId, fecha, hora, empresaId)
         if (cita) {
+          const clienteNombre = nombreCliente || telefono
+
+          // Notificación al cliente
           await enviarMensaje(
             telefono,
             `*Cita confirmada correctamente.*\n\n` +
@@ -650,6 +653,38 @@ async function procesarMensaje(telefono, texto, empresa) {
             `Hora: ${hora}\n\n` +
             `Le esperamos.`
           )
+
+          // Obtener teléfono del barbero
+          const { data: barberoData } = await supabase
+            .from('barberos')
+            .select('telefono')
+            .eq('id', barberoId)
+            .single()
+
+          // Notificación al barbero
+          if (barberoData?.telefono) {
+            await enviarMensaje(
+              barberoData.telefono,
+              `*Nueva cita asignada*\n\n` +
+              `Cliente: ${clienteNombre}\n` +
+              `Servicio: ${servicio}\n` +
+              `Fecha: ${fecha}\n` +
+              `Hora: ${hora}`
+            )
+          }
+
+          // Notificación al negocio
+          if (empresa.telefono) {
+            await enviarMensaje(
+              empresa.telefono,
+              `*Nueva cita confirmada*\n\n` +
+              `Cliente: ${clienteNombre}\n` +
+              `Profesional: ${barberoNombre}\n` +
+              `Servicio: ${servicio}\n` +
+              `Fecha: ${fecha}\n` +
+              `Hora: ${hora}`
+            )
+          }
         } else {
           await enviarMensaje(
             telefono,

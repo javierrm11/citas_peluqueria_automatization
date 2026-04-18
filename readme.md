@@ -211,21 +211,26 @@ Usuario: pulsa "Confirmar"
 
 ### 🟠 Importante
 
-#### Notificación al barbero al confirmar una cita
-Cuando un cliente confirma una cita, enviar un WhatsApp al barbero asignado.
-- Añadir campo `telefono` a la tabla `barberos`.
-- En `guardarCita()`, tras insertar, llamar a `enviarMensaje(barbero.telefono, resumen)`.
+#### 🔔 Notificaciones automáticas (cliente, barbero y negocio)
+
+Al confirmar una cita, el sistema envía notificaciones según el rol:
+
+- 📲 **Cliente** → Confirmación completa de la cita.
+- 💈 **Barbero** → Mensaje informativo (sin interacción).
+- 🏪 **Negocio** → Notificación para control y supervisión.
+
+**Base de datos**
+- Añadir `telefono` a `barberos`.
+
+**Implementación**
+```js
+await enviarMensaje(cliente.telefono, mensajeCliente)
+await enviarMensaje(barbero.telefono, mensajeBarbero)
+await enviarMensaje(NUMERO_NEGOCIO, mensajeAdmin)
 
 ---
 
 ### 🟡 Mejoras de UX
-
-
-#### Mensaje de bienvenida diferente para clientes recurrentes
-Si el cliente ya tiene citas previas, personalizar el saludo:
-```
-"¡Hola de nuevo, Miguel! ¿Volvemos a ponerte guapo? 😄"
-```
 
 ---
 
@@ -241,10 +246,6 @@ Usuario: "quiero cortarme mañana por la mañana con javier"
 - Reducir la fricción del menú numérico para usuarios habituales.
 - El flujo estructurado sigue siendo el fallback para casos ambiguos.
 
-#### Bloqueos y vacaciones
-Nueva tabla `bloqueos` con `barbero_id`, `fecha_inicio`, `fecha_fin`, `motivo`.
-- El bot excluye esas fechas al mostrar disponibilidad.
-- El admin puede configurarlos desde el panel.
 
 ---
 
@@ -254,7 +255,5 @@ Desarrollado para automatizar la gestión de citas de Peluquería Javier y mejor
 
 
 
-fix panel
 diseño
 que detecte cuando alguien le hable
-fix vacaciones que no salga el nombre si no tiene citas

@@ -61,7 +61,7 @@ router.post("/", async (req, res) => {
         // Identificar empresa por el número de WhatsApp que recibió el mensaje
         const { data: empresa } = await supabase
           .from("empresas")
-          .select("id, nombre, activo")
+          .select("id, nombre, activo, whatsapp_number")
           .eq("whatsapp_phone_number_id", phoneNumId)
           .single();
 
