@@ -674,9 +674,9 @@ async function procesarMensaje(telefono, texto, empresa) {
           }
 
           // Notificación al negocio
-          if (empresa.telefono) {
+          if (empresa.whatsapp_number) {
             await enviarMensaje(
-              empresa.telefono,
+              empresa.whatsapp_number,
               `*Nueva cita confirmada*\n\n` +
               `Cliente: ${clienteNombre}\n` +
               `Profesional: ${barberoNombre}\n` +
